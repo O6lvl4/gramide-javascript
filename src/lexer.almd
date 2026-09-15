@@ -115,6 +115,7 @@ let OP_TILDE = pack("~")
 let OP_SPREAD = pack("...")
 let OP_STAR = pack("*")
 let OP_GT = pack(">")
+let OP_LT = pack("<")
 
 // ── what the scanner remembers ────────────────────────────────────────────
 // the class of the previous token
@@ -222,6 +223,7 @@ let J_TAG_CLOSING = 2 // inside `</name …`
 let J_TAG_SELF = 3    // inside `<name … /`, waiting for `>`
 let J_CHILDREN = 4    // between an opening tag and its closing tag
 let J_EXPR = 5        // inside `{ … }` of a tag or of children
+let J_TYPE = 6        // inside the `<…>` type arguments of a tag name (TypeScript)
 let B_JSX = 4         // the `{` that opened a JSX expression
 
 // Does the `<` at `at` open an element? It must stand where an operand may
@@ -317,6 +319,7 @@ fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List
   var parens: List[Int] = []
   var jsx: List[Int] = []
   var tag_named = false     // the open tag has its name: a `/` now is self-closing
+  var type_depth = 0        // open `<` inside a tag's type arguments
   var prev = P_NONE
   var prev_op = 0           // the packed operator of the previous token, if it was one
   var prev_word = words.W_PLAIN
@@ -398,6 +401,7 @@ fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List
       }
       else if b == 123 then { this_op = OP_LBRACE; i = i + 1; list.push(jsx, J_EXPR); list.push(braces, B_JSX) }
       else if b == 61 then { this_op = pack("="); i = i + 1 }
+      else if b == 60 and tag_named and p.split_gt and jmode == J_TAG then { this_op = pack("<"); i = i + 1; list.push(jsx, J_TYPE); type_depth = 1 }
       else if b == 34 or b == 39 then {
         kind = tree.T_STRING
         let end = scan_jsx_string(buffer, i)
@@ -467,7 +471,7 @@ fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List
         err(e) => { failure = some(e); recover_end = literals.string_recovery_end(buffer, i) },
       }
     }
-    else if p.jsx and b == 60 and prev != P_OPERAND and jsx_starts(buffer, i) then {
+    else if p.jsx and b == 60 and prev != P_OPERAND and not (prev_was_word and (prev_word == words.W_FUNCTION or prev_word == words.W_CLASS)) and jsx_starts(buffer, i) then {
       // an element: `<` where an operand may stand, followed by a name or `>`
       kind = tree.T_PUNCT
       this_op = pack("<")
@@ -572,6 +576,12 @@ fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List
         nl_seen = false
       } else ()
       list.push(tokens, make(kind, start, i, first_line, first_line_start))
+      // the type arguments of a tag: back to the tag at the `>` that closes them
+      if jmode == J_TYPE and kind == tree.T_PUNCT then {
+        if this_op == OP_LT then type_depth = type_depth + 1
+        else if this_op == OP_GT then { type_depth = type_depth - 1; if type_depth == 0 then { let _ = list.pop(jsx) } else () }
+        else ()
+      } else ()
       // a template with no substitution still ends: a zero-width end marker
       if template_closed then list.push(tokens, make(tree.T_TSTRING_END, i, i, line, line_start)) else ()
       // a decorator: the line break after it joins, decided above for the
@@ -605,7 +615,8 @@ fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List
 fn scan(source: String, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = scan_prepared(source, prepare(false, true), recovering)
 
 // ── tests ─────────────────────────────────────────────────────────────────
-fn texts(src: String) -> List[String] = match scan(src, false) {
+fn texts(src: String) -> List[String] = texts_with(src, prepare(false, true))
+fn texts_with(src: String, p: ScanTables) -> List[String] = match scan_prepared(src, p, false) {
   ok(toks) => list.map(toks, (t) => if t.kind == tree.T_NEWLINE then "⏎" else if t.kind == tree.T_EOF then "" else tree.token_text(bytes.from_string(src), t)),
   err(e) => ["LEX ERROR " + int.to_string(e.line) + ":" + int.to_string(e.col) + " " + e.message],
 }
@@ -672,6 +683,15 @@ test "an element is scanned as tags, names, strings and text, and ends as an ope
   assert_eq(texts("<><A.B data-x='1' /></>"), ["<", ">", "<", "A.B", "data-x", "=", "'1'", "/", ">", "<", "/", ">", ""])
   assert_eq(texts("a < b\nf<T>(x)\n<T,>(x) => x\n<T extends U>(x) => x"),
     ["a", "<", "b", "⏎", "f", "<", "T", ">", "(", "x", ")", "<", "T", ",", ">", "(", "x", ")", "=>", "x", "<", "T", "extends", "U", ">", "(", "x", ")", "=>", "x", ""])
+  assert_eq(texts("f = function <T>(a) { return a }\nclass<T> {}"),
+    ["f", "=", "function", "<", "T", ">", "(", "a", ")", "{", "return", "a", "}", "⏎", "class", "<", "T", ">", "{", "}", ""])
   assert_eq(texts("return (\n  <ul>\n    {items.map(i => <li key={i}>{i}</li>)}\n  </ul>\n)"),
     ["return", "(", "<", "ul", ">", "\n    ", "{", "items", ".", "map", "(", "i", "=>", "<", "li", "key", "=", "{", "i", "}", ">", "{", "i", "}", "<", "/", "li", ">", ")", "}", "\n  ", "<", "/", "ul", ">", ")", ""])
+}
+
+test "a tag's type arguments are read as TypeScript, then the tag goes on" {
+  assert_eq(texts_with("<Select<string[]> multiple value={v}>{c}</Select>", prepare(true, true)),
+    ["<", "Select", "<", "string", "[", "]", ">", "multiple", "value", "=", "{", "v", "}", ">", "{", "c", "}", "<", "/", "Select", ">", ""])
+  assert_eq(texts_with("<R<Map<K, V> | false> type=\"button\" />", prepare(true, true)),
+    ["<", "R", "<", "Map", "<", "K", ",", "V", ">", "|", "false", ">", "type", "=", "\"button\"", "/", ">", ""])
 }

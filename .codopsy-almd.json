@@ -3,7 +3,7 @@
   "src/declarations.almd": 3,
   "src/expressions.almd": 1,
   "src/grammar.almd": 3,
-  "src/lexer.almd": 95,
+  "src/lexer.almd": 100,
   "src/literals.almd": 11,
   "src/mod.almd": 1,
   "src/statements.almd": 1,
