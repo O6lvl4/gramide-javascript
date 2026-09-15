@@ -193,10 +193,10 @@ fn scan_word(buffer: Bytes, start: Int) -> Int = {
 // `split_gt` is the TypeScript package's: `>` is always one token, and a `>`
 // after an operand is the end of one (`Promise<void>` ends a line the way a
 // name does), which a comparison at the end of a line then cannot be.
-type Tables = { ops: Operators, word_table: words.Words, split_gt: Bool }
-fn prepare(split_gt: Bool) -> Tables = Tables { ops: operators(split_gt), word_table: words.prepare(), split_gt: split_gt }
+type ScanTables = { ops: Operators, word_table: words.Words, split_gt: Bool }
+fn prepare(split_gt: Bool) -> ScanTables = ScanTables { ops: operators(split_gt), word_table: words.prepare(), split_gt: split_gt }
 
-fn scan_prepared(source: String, p: Tables, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = {
+fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = {
   let buffer = bytes.from_string(source)
   let n = bytes.len(buffer)
   var tokens: List[tree.Token] = []
