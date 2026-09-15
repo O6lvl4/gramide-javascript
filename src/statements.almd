@@ -1,0 +1,73 @@
+// statements — control flow, blocks and the file itself.
+//
+// A statement list recovers per statement inside braces (`recover`) and per
+// declaration at the top of the file (`recover_all_keeping`), where a
+// declaration whose body is half-typed still yields its kind and name.
+import gramide.parser
+import gramide.parser.{ tok, lit, keep, r, seq, alt, rep, opt, wrap, field, ahead, nott, lits, keeps, nothing, recover, recover_all_keeping }
+import self.common
+import self.common.{ ident, sep, osep, eos, parenthesized }
+
+// The statement rules at two depths: `declaration_rule` names which variable
+// declaration a depth lists.
+fn statement(declaration_rule: String) -> parser.Rule = alt([
+  r("block"), wrap("empty_statement", lit(";")), r(declaration_rule), r("if_statement"), r("for_statement"), r("while_statement"), r("do_statement"),
+  r("return_statement"), r("throw_statement"), r("break_statement"), r("continue_statement"),
+  r("switch_statement"), r("try_statement"), r("labeled_statement"), r("with_statement"),
+  wrap("debugger", seq([lit("debugger"), eos()])),
+  r("import_statement"), r("export_statement"), r("extra_statement"),
+  r("expression_statement"),
+])
+
+fn rules() -> List[(String, parser.Rule)] = [
+  ("source_file", wrap("source_file", seq([osep(), rep(recover_all_keeping(seq([r("top_statement"), osep()]), r("decl_head")))]))),
+  // what is still worth knowing about a declaration whose body is half-typed:
+  // its kind and its name
+  ("decl_head", alt([
+    wrap("function_declaration", seq([opt(lit("export")), opt(lit("async")), lit("function"), opt(lit("*")), field("name", r("name"))])),
+    wrap("class_declaration", seq([r("decorators"), opt(lit("export")), opt(lit("default")), r("decorators"), lit("class"), field("name", r("name"))])),
+  ])),
+  ("top_statement", statement("declaration")),
+  ("statement", statement("local_declaration")),
+  ("block", wrap("block", seq([lit("{"), osep(), rep(recover(seq([r("statement"), osep()]))), lit("}")]))),
+  ("expression_statement", wrap("expression_statement", seq([
+    nott(lits(["function", "class", "{"])), nott(seq([lit("async"), lit("function")])), r("expression"), eos()
+  ]))),
+
+  ("if_statement", wrap("if_statement", seq([
+    lit("if"), parenthesized(r("expression")), r("statement"), opt(seq([osep(), lit("else"), r("statement")]))
+  ]))),
+  ("for_statement", alt([
+    wrap("for_in_statement", seq([lit("for"), opt(lit("await")), lit("("), r("for_binding"), keeps(["in", "of"]), r("assignment"), lit(")"), r("statement")])),
+    wrap("for_statement", seq([lit("for"), lit("("), opt(r("for_init")), lit(";"), opt(r("expression")), lit(";"), opt(r("expression")), lit(")"), r("statement")])),
+  ])),
+  ("for_binding", alt([seq([lits(["var", "let", "const"]), r("binding_target"), r("type_annotation")]), r("postfix_expr")])),
+  ("for_init", alt([
+    wrap("var_declaration", seq([lits(["var", "let", "const"]), r("for_declarator"), rep(seq([lit(","), r("for_declarator")]))])),
+    r("expression"),
+  ])),
+  ("for_declarator", wrap("local_var_declarator", seq([r("binding_target"), r("binding_marks"), r("type_annotation"), opt(seq([lit("="), r("assignment")]))]))),
+  ("while_statement", wrap("while_statement", seq([lit("while"), parenthesized(r("expression")), r("statement")]))),
+  ("do_statement", wrap("do_statement", seq([lit("do"), r("statement"), osep(), lit("while"), parenthesized(r("expression")), opt(lit(";"))]))),
+  ("return_statement", wrap("return_statement", seq([lit("return"), opt(r("expression")), eos()]))),
+  ("throw_statement", wrap("throw_statement", seq([lit("throw"), r("expression"), eos()]))),
+  ("break_statement", wrap("break_statement", seq([lit("break"), opt(r("name")), eos()]))),
+  ("continue_statement", wrap("continue_statement", seq([lit("continue"), opt(r("name")), eos()]))),
+  ("switch_statement", wrap("switch_statement", seq([
+    lit("switch"), parenthesized(r("expression")), lit("{"), osep(), rep(seq([r("case_clause"), osep()])), lit("}")
+  ]))),
+  ("case_clause", wrap("case", seq([
+    alt([seq([lit("case"), r("expression")]), lit("default")]), lit(":"), osep(),
+    rep(recover(seq([nott(lits(["case", "default"])), r("statement"), osep()])))
+  ]))),
+  ("try_statement", wrap("try_statement", seq([
+    lit("try"), r("block"),
+    opt(wrap("catch", seq([lit("catch"), opt(seq([lit("("), r("binding_target"), r("type_annotation"), lit(")")])), r("block")]))),
+    opt(seq([lit("finally"), r("block")]))
+  ]))),
+  ("labeled_statement", wrap("labeled_statement", seq([r("name"), lit(":"), r("statement")]))),
+  ("with_statement", wrap("with_statement", seq([lit("with"), parenthesized(r("expression")), r("statement")]))),
+
+  // extension point: what TypeScript adds as a statement
+  ("extra_statement", nothing()),
+]

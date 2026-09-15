@@ -1,0 +1,27 @@
+// gramide_javascript — JavaScript for gramide: what the package hands the host.
+//
+// The scanner is src/lexer.almd with src/literals.almd and src/words.almd
+// beside it; the grammar is src/grammar.almd and the modules it composes;
+// src/symbols.almd says which nodes declare a name; src/table.almd is the
+// grammar compiled, which is what a binary reads. `definition()` is the
+// whole contract.
+import gramide.package_api
+import gramide.tree
+import gramide.lex
+import self.lexer
+import self.symbols
+import self.table
+
+let VERSION = "0.1.0"
+
+// The operator and word tables are packed once here, not once per file.
+fn prepare_lexer() -> package_api.Tokenizer = {
+  let prepared = lexer.prepare(false)
+  (source, recovering) => lexer.scan_prepared(source, prepared, recovering)
+}
+
+fn definition() -> package_api.Definition = package_api.Definition {
+  id: "javascript", package_name: "gramide-javascript", version: VERSION, extensions: [".js", ".mjs", ".cjs"],
+  capabilities: ["check", "tokens", "parse", "outline", "symbols", "tags", "map"],
+  lexer: () => prepare_lexer(), grammar: () => table.compiled(), sep: ".", symbols: symbols.symbol_rules()
+}

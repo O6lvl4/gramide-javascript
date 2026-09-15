@@ -1,0 +1,6 @@
+/gramide_javascript
+/target/
+/bin/
+__pycache__/
+
+/node_modules/

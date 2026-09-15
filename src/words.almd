@@ -1,0 +1,131 @@
+// words — the few identifiers the scanner has to know by name.
+//
+// JavaScript's grammar is not what the scanner cares about; three lexical
+// questions are. After which words may a `/` begin a regular expression?
+// After which words does a line break end the statement no matter what
+// follows (`return`, `throw`, ...)? And after which words is a `{` a block
+// rather than an object literal? Every other identifier, keyword or not, is
+// an ordinary word to the scanner and a question for the grammar.
+//
+// The spellings are packed once into one Bytes with their bounds beside them,
+// so classifying a word is a byte walk over the source where it sits and
+// never a String. Most tokens in a file are identifiers; this is the path
+// that must not allocate.
+
+// ── the codes ─────────────────────────────────────────────────────────────
+let W_PLAIN = 0
+// a line break after one of these ends the statement (restricted productions)
+let W_RETURN = 1
+let W_THROW = 2
+let W_BREAK = 3
+let W_CONTINUE = 4
+let W_YIELD = 5
+let W_DEBUGGER = 6
+// an operand may follow: a regex may begin, a `{` is an object, no separator
+let W_TYPEOF = 10
+let W_INSTANCEOF = 11
+let W_IN = 12
+let W_OF = 13
+let W_NEW = 14
+let W_DELETE = 15
+let W_VOID = 16
+let W_CASE = 17
+let W_AWAIT = 18
+let W_EXTENDS = 19
+let W_DEFAULT = 20
+// a statement may follow: a regex may begin, a `{` is a block, no separator
+let W_ELSE = 30
+let W_DO = 31
+let W_TRY = 32
+let W_FINALLY = 33
+let W_IF = 40
+let W_FOR = 41
+let W_WHILE = 42
+let W_WITH = 43
+let W_SWITCH = 44
+let W_CATCH = 45
+let W_FUNCTION = 46
+let W_CLASS = 47
+let W_IMPORT = 48
+let W_EXPORT = 49
+
+fn spellings() -> List[(String, Int)] = [
+  ("return", W_RETURN), ("throw", W_THROW), ("break", W_BREAK), ("continue", W_CONTINUE),
+  ("yield", W_YIELD), ("debugger", W_DEBUGGER),
+  ("typeof", W_TYPEOF), ("instanceof", W_INSTANCEOF), ("in", W_IN), ("of", W_OF), ("new", W_NEW),
+  ("delete", W_DELETE), ("void", W_VOID), ("case", W_CASE), ("await", W_AWAIT), ("extends", W_EXTENDS),
+  ("default", W_DEFAULT),
+  ("else", W_ELSE), ("do", W_DO), ("try", W_TRY), ("finally", W_FINALLY),
+  ("if", W_IF), ("for", W_FOR), ("while", W_WHILE), ("with", W_WITH), ("switch", W_SWITCH),
+  ("catch", W_CATCH), ("function", W_FUNCTION), ("class", W_CLASS), ("import", W_IMPORT), ("export", W_EXPORT),
+]
+
+// ── the packed table ──────────────────────────────────────────────────────
+type Words = { data: Bytes, starts: List[Int], ends: List[Int], codes: List[Int] }
+
+fn prepare() -> Words = {
+  var data = bytes.new(0)
+  var starts: List[Int] = []
+  var ends: List[Int] = []
+  var codes: List[Int] = []
+  for entry in spellings() {
+    let raw = bytes.from_string(entry.0)
+    list.push(starts, bytes.len(data))
+    data = bytes.concat(data, raw)
+    list.push(ends, bytes.len(data))
+    list.push(codes, entry.1)
+  }
+  Words { data: data, starts: starts, ends: ends, codes: codes }
+}
+
+// The code of the word at buffer[start, end), or W_PLAIN. Every listed word
+// is lowercase ASCII of two to ten bytes, which rules most identifiers out
+// before any spelling is compared.
+fn classify(w: Words, buffer: Bytes, start: Int, end: Int) -> Int = {
+  let n = end - start
+  let first = bytes.get_or(buffer, start, -1)
+  if n < 2 or n > 10 or first < 97 or first > 122 then W_PLAIN
+  else {
+    var code = W_PLAIN
+    var k = 0
+    let count = list.len(w.codes)
+    while code == W_PLAIN and k < count {
+      let s = list.get(w.starts, k) ?? 0
+      let e = list.get(w.ends, k) ?? 0
+      if e - s == n and bytes.get_or(w.data, s, -2) == first then {
+        var j = 1
+        var same = true
+        while same and j < n {
+          if bytes.get_or(w.data, s + j, -2) != bytes.get_or(buffer, start + j, -1) then same = false else j = j + 1
+        }
+        if same then code = list.get(w.codes, k) ?? W_PLAIN else ()
+      } else ()
+      k = k + 1
+    }
+    code
+  }
+}
+
+fn restricted(code: Int) -> Bool = code >= W_RETURN and code <= W_DEBUGGER
+// after these an operand follows, so `{` opens an object and `/` a regex
+fn before_operand(code: Int) -> Bool = code >= W_RETURN and code <= W_DEFAULT
+// after these a statement or a block follows
+fn before_statement(code: Int) -> Bool = code >= W_ELSE
+// the words whose `(` opens a header, after which `{` is a body and `/` a regex
+fn opens_header(code: Int) -> Bool = code == W_IF or code == W_FOR or code == W_WHILE or code == W_WITH
+  or code == W_SWITCH or code == W_CATCH or code == W_FUNCTION
+
+test "the packed table classifies by bytes, without cutting a string" {
+  let w = prepare()
+  let src = bytes.from_string("return returned typeof x of in instanceof debugger")
+  assert_eq(classify(w, src, 0, 6), W_RETURN)
+  assert_eq(classify(w, src, 7, 15), W_PLAIN)
+  assert_eq(classify(w, src, 16, 22), W_TYPEOF)
+  assert_eq(classify(w, src, 25, 27), W_OF)
+  assert_eq(classify(w, src, 28, 30), W_IN)
+  assert_eq(classify(w, src, 31, 41), W_INSTANCEOF)
+  assert_eq(classify(w, src, 42, 50), W_DEBUGGER)
+  assert(restricted(W_THROW) and not restricted(W_TYPEOF))
+  assert(before_operand(W_RETURN) and before_operand(W_CASE) and not before_operand(W_ELSE))
+  assert(before_statement(W_DO) and before_statement(W_EXPORT) and not before_statement(W_PLAIN))
+}

@@ -1,0 +1,134 @@
+// expressions — from a comma sequence down to an operand, in ECMAScript's
+// precedence order, as one PEG.
+//
+// Three places are the ones that decide the cost of a parse. An arrow
+// function looks like a parenthesised expression until its `=>`, and an
+// assignment looks like any expression until its operator; the first is
+// found by a balanced lookahead and the second by parsing the expression
+// once and looking at what follows. And the binary levels are one `prec`
+// ladder, so reaching an operand is one rule visit, not eleven.
+//
+// The rules named `type_arguments`, `type_parameters`, `return_annotation`,
+// `extra_primary` and `suffix_extra` match nothing here; the TypeScript
+// package replaces them.
+import gramide.parser
+import gramide.parser.{ tok, lit, keep, r, seq, alt, rep, opt, wrap, field, nest, ahead, nott, prec, lits, keeps, nothing, any }
+import self.common
+import self.common.{ ident, items }
+
+let ASSIGN_OPS = ["=", "+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", ">>>=", "&=", "|=", "^=", "&&=", "||=", "??="]
+
+fn arguments() -> parser.Rule = wrap("arguments", seq([lit("("), items(r("argument")), lit(")")]))
+
+fn rules() -> List[(String, parser.Rule)] = [
+  ("name", seq([nott(lits(common.RESERVED)), ident()])),
+  ("expression", nest("sequence", seq([r("assignment"), rep(seq([lit(","), r("assignment")]))]))),
+
+  // ── assignment level ──────────────────────────────────────────────────
+  // An arrow function is tried first, behind a lookahead that skips its
+  // parameter list as a balanced token tree and asks for the `=>`: the
+  // parameters are parsed once, and a parenthesised expression that is not
+  // an arrow costs the skip and nothing else. An assignment is what a
+  // conditional turns out to be when an assignment operator follows it, so
+  // the left side is parsed once too; that the left side may then be any
+  // expression is the permissiveness noted in grammar.almd.
+  ("assignment", alt([
+    seq([r("arrow_ahead"), r("arrow_function")]),
+    wrap("yield", seq([lit("yield"), opt(seq([opt(lit("*")), r("assignment")]))])),
+    nest("assignment", seq([r("conditional"), opt(seq([field("operator", keeps(ASSIGN_OPS)), r("assignment")]))])),
+  ])),
+  ("arrow_ahead", ahead(seq([opt(lit("async")), alt([
+    seq([r("name"), lit("=>")]),
+    seq([r("type_parameters"), lit("("), rep(r("tt")), lit(")"), r("arrow_tail_ahead")]),
+  ])]))),
+  ("arrow_function", wrap("arrow_function", seq([
+    opt(lit("async")), r("type_parameters"),
+    alt([r("parameters"), wrap("parameters", wrap("parameter", field("name", r("name"))))]),
+    r("return_annotation"), lit("=>"), alt([r("block"), r("assignment")])
+  ]))),
+  // a run of tokens balanced across brackets, read without being understood
+  ("tt", alt([
+    seq([lit("("), rep(r("tt")), lit(")")]),
+    seq([lit("["), rep(r("tt")), lit("]")]),
+    seq([lit("{"), rep(r("tt")), lit("}")]),
+    seq([nott(lits([")", "]", "}"])), any()]),
+  ])),
+  ("conditional", nest("conditional", seq([r("binary"), opt(seq([lit("?"), r("assignment"), lit(":"), r("assignment")]))]))),
+
+  // ── binary levels, lowest first ───────────────────────────────────────
+  ("binary", prec("binary", r("shift"), [
+    keep("??"), keep("||"), keep("&&"), keep("|"), keep("^"), keep("&"),
+    keeps(["==", "!=", "===", "!=="]),
+    keeps(["<", ">", "<=", ">=", "instanceof", "in"]),
+  ])),
+  ("shift", prec("binary", r("additive"), [keeps(["<<", ">>", ">>>"])])),
+  ("additive", prec("binary", r("exponent"), [keeps(["+", "-"]), keeps(["*", "/", "%"])])),
+  ("exponent", nest("binary", seq([r("unary"), opt(seq([keep("**"), r("exponent")]))]))),
+  ("unary", alt([
+    wrap("unary", seq([field("operator", keeps(["!", "~", "+", "-", "typeof", "void", "delete", "await"])), r("unary")])),
+    wrap("update", seq([keeps(["++", "--"]), r("unary")])),
+    r("postfix"),
+  ])),
+  ("postfix", nest("postfix", seq([r("postfix_expr"), opt(keeps(["++", "--"]))]))),
+
+  // ── the postfix chain: an operand and its suffixes, flat ──────────────
+  ("postfix_expr", nest("chain", seq([r("operand"), rep(r("suffix"))]))),
+  ("suffix", alt([
+    wrap("arguments", seq([r("type_arguments"), lit("("), items(r("argument")), lit(")")])),
+    wrap("field_access", seq([lits([".", "?."]), field("field", ident())])),
+    wrap("index", seq([opt(lit("?.")), lit("["), r("expression"), lit("]")])),
+    seq([lit("?."), arguments()]),
+    r("template_literal"),
+    r("suffix_extra"),
+  ])),
+  ("argument", alt([wrap("spread", seq([lit("..."), r("assignment")])), r("assignment")])),
+  ("operand", alt([
+    wrap("meta_property", seq([lit("new"), lit("."), lit("target")])),
+    r("new_expression"),
+    wrap("meta_property", seq([lit("import"), lit("."), lit("meta")])),
+    wrap("import_call", seq([lit("import"), lit("("), items(r("assignment")), lit(")")])),
+    r("primary"),
+  ])),
+  ("new_expression", wrap("new_expression", seq([lit("new"), r("new_callee"), r("type_arguments"), opt(arguments())]))),
+  ("new_callee", seq([alt([r("new_expression"), r("primary")]), rep(alt([
+    wrap("field_access", seq([lit("."), field("field", ident())])),
+    wrap("index", seq([lit("["), r("expression"), lit("]")])),
+    r("template_literal"),
+  ]))])),
+  ("primary", alt([
+    tok("number"), tok("string"), r("template_literal"),
+    r("function_expression"), r("class_expression"),
+    wrap("group", seq([lit("("), r("expression"), lit(")")])),
+    r("array"), r("object"),
+    keeps(["this", "super", "true", "false", "null"]),
+    r("extra_primary"),
+    r("name"),
+  ])),
+  ("template_literal", wrap("template", seq([
+    tok("tstring_start"), opt(seq([r("expression"), rep(seq([tok("tstring_middle"), r("expression")]))])), tok("tstring_end")
+  ]))),
+  ("array", wrap("array", seq([lit("["), rep(alt([lit(","), seq([r("argument"), alt([lit(","), ahead(lit("]"))])])])), lit("]")]))),
+
+  // ── object literals share their methods with class bodies ─────────────
+  ("object", wrap("object", seq([lit("{"), items(r("property")), lit("}")]))),
+  ("property", alt([
+    wrap("spread", seq([lit("..."), r("assignment")])),
+    r("method_definition"),
+    // a property named by a plain word owns the methods of the object it
+    // holds (`handlers.onClick`); one named by a string, a number or a
+    // computed key does not, and the object's methods belong to the nearest
+    // binding above
+    wrap("property", seq([field("name", r("name")), lit(":"), r("assignment")])),
+    wrap("keyed_property", seq([r("property_name"), lit(":"), r("assignment")])),
+    wrap("shorthand", seq([r("name"), opt(seq([lit("="), r("assignment")]))])),
+  ])),
+  ("property_name", alt([wrap("computed", seq([lit("["), r("assignment"), lit("]")])), tok("string"), tok("number"), ident()])),
+
+  // extension points: what TypeScript adds to an expression
+  ("type_arguments", seq([])),
+  ("type_parameters", seq([])),
+  ("return_annotation", seq([])),
+  ("extra_primary", nothing()),
+  ("suffix_extra", nothing()),
+  ("arrow_tail_ahead", lit("=>")),
+]

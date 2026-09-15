@@ -1,0 +1,26 @@
+// common — the terminals and list shapes every part of the grammar shares.
+//
+// The scanner has already decided which line breaks separate statements, so
+// a `newline` token here is a separator and nothing else; `sep` is what ends
+// a statement and `eos` is where one may end (a separator, or the `}` or end
+// of file that closes it).
+import gramide.parser
+import gramide.parser.{ tok, lit, seq, alt, rep, rep1, opt, ahead, nott, lits }
+
+// Words a binding cannot be named. Everything else — `yield`, `await`,
+// `let`, `static`, `async`, `get`, `set`, `of`, `as`, `type` — is a name
+// until a grammar rule reads it as something else.
+let RESERVED = ["break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do",
+  "else", "enum", "export", "extends", "false", "finally", "for", "function", "if", "import", "in", "instanceof",
+  "new", "null", "return", "super", "switch", "this", "throw", "true", "try", "typeof", "var", "void", "while", "with"]
+
+fn ident() -> parser.Rule = tok("identifier")
+fn sep() -> parser.Rule = rep1(alt([lit(";"), tok("newline")]))
+fn osep() -> parser.Rule = opt(sep())
+fn eos() -> parser.Rule = alt([sep(), ahead(lit("}")), ahead(tok("eof"))])
+
+// `a, b, c` with an optional trailing comma, possibly empty
+fn items(x: parser.Rule) -> parser.Rule = opt(seq([x, rep(seq([lit(","), x])), opt(lit(","))]))
+// `a, b, c`, at least one
+fn items1(x: parser.Rule) -> parser.Rule = seq([x, rep(seq([lit(","), x])), opt(lit(","))])
+fn parenthesized(x: parser.Rule) -> parser.Rule = seq([lit("("), x, lit(")")])

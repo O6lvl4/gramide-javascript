@@ -1,0 +1,61 @@
+// symbols — which of this grammar's nodes declare a name, which own methods,
+// and which reference one: the rules the readers in gramide walk with.
+// What those readers then say about JavaScript is checked against the
+// TypeScript compiler's own syntax tree in ci/reference_ranges.mjs.
+import gramide.package_api
+import gramide.parser
+import gramide.tags
+import self.lexer
+import self.grammar
+
+fn symbol_rules() -> package_api.SymbolRules = package_api.SymbolRules {
+  declarations: [
+    ("function_declaration", "function"), ("function_binding", "function"),
+    ("class_declaration", "class"), ("method_definition", "method"), ("field_definition", "field"),
+    ("const_declarator", "const"), ("let_declarator", "let"), ("var_declarator", "var"), ("using_declarator", "using")
+  ],
+  // a method is named with its class, or with the binding an object or class
+  // expression was assigned to: `const api = { get() {} }` declares `api.get`
+  scopes: ["class_declaration", "const_declarator", "let_declarator", "var_declarator", "using_declarator",
+    "local_const_declarator", "local_let_declarator", "local_var_declarator", "local_using_declarator",
+    "function_binding", "local_function_binding", "property"],
+  namespaces: [], callables: ["method_definition"],
+  lexical_owners: false,
+  // `export function f() {}` and `const x = 1` are one declaration from
+  // their first word
+  envelopes: ["export_statement", "const_declaration", "let_declaration", "var_declaration", "using_declaration"],
+  unnamed_envelopes: [],
+  arguments: "arguments", field_access: "field_access", type_mentions: []
+}
+
+test "a JavaScript method is named with its class, or with the binding its object was assigned to" {
+  let src = """export default class Widget extends Base {
+  static #registry = new Map()
+  constructor(name) { super(name) }
+  get size() { return this.#size }
+}
+export function render(widget) {
+  function inner() { return 1 }
+  return inner()
+}
+export const helper = async (a, b = 2) => a ** b
+const handlers = { onClick() { render(1) }, get value() { return 1 } }
+let count = 0
+"""
+  let source = bytes.from_string(src)
+  let toks = lexer.scan(src, false) |> result.map_err((e) => e.message)!
+  let p = parser.parse(grammar.rules(), source, toks) |> result.map_err((f) => parser.format_failure(f))!
+  assert_eq(tags.outline(p.root, toks, source, p.names, ".", symbol_rules()), [
+    "L1-5 class Widget",
+    "  L2-2 field #registry",
+    "  L3-3 method Widget.constructor",
+    "  L4-4 method Widget.size",
+    "L6-9 function render",
+    "  L7-7 function inner",
+    "L10-10 function helper",
+    "L11-11 const handlers",
+    "  L11-11 method handlers.onClick",
+    "  L11-11 method handlers.value",
+    "L12-12 let count",
+  ])
+}

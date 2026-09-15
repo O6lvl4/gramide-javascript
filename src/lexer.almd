@@ -1,0 +1,498 @@
+// lexer — UTF-8 JavaScript source in, tokens out.
+//
+// JavaScript cannot be lexed by a table, for three reasons that all come
+// down to context. A `/` divides or opens a regular expression depending on
+// the token before it. A template literal holds expressions that hold
+// template literals. And a line break ends a statement or does not, by rules
+// (automatic semicolon insertion) that look at the tokens on both sides of
+// it. This scanner settles all three, so that the grammar never mentions a
+// newline: a `newline` token in the stream is a statement separator and
+// nothing else, exactly as in the Go package.
+//
+// What the scanner keeps to decide those questions is small. The class of
+// the previous token (operand, punctuation, a word that an operand follows,
+// a word that a statement follows, a restricted word such as `return`); a
+// stack of what each open `{` is (a block, an object literal, a template
+// substitution, the body of a `do`); a stack of what each open `(` is (the
+// header of an `if` / `for` / `function` ..., or an ordinary group); and
+// whether a line break has been seen since the previous token. Comments are
+// skipped, and a block comment spanning lines is a line break.
+//
+// The separator rule, in one paragraph. A line break becomes a `newline`
+// token when the previous token was `return`, `throw`, `break`, `continue`,
+// `yield` or `debugger` (the restricted productions); or when it was an
+// operand — a name, a literal, `)` of a group, `]`, the `}` of an object —
+// and the next token cannot continue an expression (it is not an operator,
+// a `,`, a closer, `.`, `(`, `[`, a template, `else`, `in`, ...); or when it
+// was the `}` of a block and the next token is not `else`, `catch`,
+// `finally`, a closer or an operator (the `while` of a `do` included). After
+// anything else — an operator, an opener, the `)` of an `if` header, a
+// keyword — a line break means nothing.
+import gramide.tree
+import gramide.lex
+import self.words
+import self.literals
+
+// ── operators, packed by first byte ───────────────────────────────────────
+// Longest first, so the first that matches is the longest. Each is packed
+// into one integer — its bytes and its width — and grouped by first byte.
+fn operator_texts(split_gt: Bool) -> List[String] = {
+  let shifts = if split_gt then ([]: List[String]) else [">>>=", ">>=", ">>>", ">=", ">>"]
+  shifts + [
+    "...", "===", "!==", "**=", "<<=", "&&=", "||=", "??=",
+    "=>", "==", "!=", "<=", "&&", "||", "??", "?.", "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "**", "<<",
+    "+", "-", "*", "/", "%", "&", "|", "^", "<", ">", "=", "!", "~", "?", ":", ".", ",", ";", "(", ")", "[", "]", "{", "}", "@"
+  ]
+}
+type Operators = { start: List[Int], count: List[Int], packed: List[Int] }
+let OP_BYTES = 256
+
+fn pack(text: String) -> Int = {
+  let raw = bytes.from_string(text)
+  int.bor(int.bor(bytes.get_or(raw, 0, 0), int.bshl(bytes.get_or(raw, 1, 0), 8)),
+    int.bor(int.bshl(bytes.get_or(raw, 2, 0), 16), int.bshl(bytes.len(raw), 24)))
+}
+
+fn operators(split_gt: Bool) -> Operators = {
+  var all: List[Int] = []
+  for text in operator_texts(split_gt) { list.push(all, pack(text)) }
+  var start: List[Int] = list.with_capacity(OP_BYTES)
+  var count: List[Int] = list.with_capacity(OP_BYTES)
+  var packed: List[Int] = list.with_capacity(list.len(all))
+  var b = 0
+  while b < OP_BYTES {
+    list.push(start, list.len(packed))
+    var n = 0
+    var k = 0
+    while k < list.len(all) {
+      let p = list.get(all, k) ?? 0
+      if int.band(p, 255) == b then { list.push(packed, p); n = n + 1 } else ()
+      k = k + 1
+    }
+    list.push(count, n)
+    b = b + 1
+  }
+  Operators { start: start, count: count, packed: packed }
+}
+
+// The packed operator standing at `at`, or 0 for none. `>>>=` is four bytes;
+// the fourth is checked here because the pack holds only three.
+fn operator_at(ops: Operators, source: Bytes, at: Int, first: Int) -> Int = {
+  if first < 0 or first >= OP_BYTES then 0 else {
+    let from = list.get(ops.start, first) ?? 0
+    let n = list.get(ops.count, first) ?? 0
+    var found = 0
+    var j = 0
+    while found == 0 and j < n {
+      let p = list.get(ops.packed, from + j) ?? 0
+      let w = int.bshr(p, 24)
+      if (w < 2 or bytes.get_or(source, at + 1, -1) == int.band(int.bshr(p, 8), 255))
+        and (w < 3 or bytes.get_or(source, at + 2, -1) == int.band(int.bshr(p, 16), 255))
+        and (w < 4 or bytes.get_or(source, at + 3, -1) == 61) then found = p
+      else ()
+      j = j + 1
+    }
+    found
+  }
+}
+fn width_of(op: Int) -> Int = int.bshr(op, 24)
+
+let OP_LPAREN = pack("(")
+let OP_RPAREN = pack(")")
+let OP_LBRACK = pack("[")
+let OP_RBRACK = pack("]")
+let OP_LBRACE = pack("{")
+let OP_RBRACE = pack("}")
+let OP_ARROW = pack("=>")
+let OP_SEMI = pack(";")
+let OP_COLON = pack(":")
+let OP_QDOT = pack("?.")
+let OP_AT = pack("@")
+let OP_INC = pack("++")
+let OP_DEC = pack("--")
+let OP_NOT = pack("!")
+let OP_TILDE = pack("~")
+let OP_SPREAD = pack("...")
+let OP_STAR = pack("*")
+
+// ── what the scanner remembers ────────────────────────────────────────────
+// the class of the previous token
+let P_NONE = 0            // nothing yet, or a separator just went out
+let P_OPERAND = 1         // a name, a literal, `)` of a group, `]`, `}` of an object
+let P_PUNCT = 2           // an operator, an opener, `)` of a header, `:` ...
+let P_RESTRICTED = 3      // return throw break continue yield debugger
+let P_WORD_OPERAND = 4    // typeof in of new delete case await extends default
+let P_WORD_STATEMENT = 5  // else do try finally if for while with switch catch function class import export
+let P_BLOCK_END = 6       // `}` of a block
+// what an open brace is
+let B_BLOCK = 0
+let B_OBJECT = 1
+let B_TEMPLATE = 2
+let B_DO = 3
+// what an open paren is
+let PAREN_PLAIN = 0
+let PAREN_HEADER = 1
+
+// After a line break, can the next token continue the expression the
+// previous operand ended? Openers, templates and prefix operators cannot
+// begin a continuation after an operand except `(`, `[` and a template,
+// which the specification reads as a call, an index and a tag.
+fn punct_starts_statement(op: Int) -> Bool =
+  op == OP_LBRACE or op == OP_NOT or op == OP_TILDE or op == OP_INC or op == OP_DEC or op == OP_SPREAD or op == OP_AT
+// after an operand, these words continue the expression or the declaration
+fn word_continues_operand(code: Int) -> Bool =
+  code == words.W_IN or code == words.W_INSTANCEOF or code == words.W_OF or code == words.W_EXTENDS
+// after the `}` of a block, these words continue the statement
+fn word_continues_block(code: Int, after_do: Bool) -> Bool =
+  code == words.W_ELSE or code == words.W_CATCH or code == words.W_FINALLY or (code == words.W_WHILE and after_do)
+
+fn make(kind: Int, start: Int, end: Int, line: Int, line_start: Int) -> tree.Token =
+  tree.Token { kind: kind, start: start, end: end, line: line, col: start - line_start + 1 }
+fn newline_end(source: Bytes, at: Int) -> Int = at + (if bytes.get_or(source, at, -1) == 13 and bytes.get_or(source, at + 1, -1) == 10 then 2 else 1)
+fn ident_start(b: Int) -> Bool = (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 95 or b == 36 or b >= 128 or b == 92
+fn is_space(b: Int) -> Bool = b == 32 or b == 9 or b == 11 or b == 12
+
+// The width of a non-ASCII whitespace or the byte order mark at `at`, or 0.
+fn unicode_space(buffer: Bytes, at: Int) -> Int = {
+  let a = bytes.get_or(buffer, at, -1)
+  let b = bytes.get_or(buffer, at + 1, -1)
+  let c = bytes.get_or(buffer, at + 2, -1)
+  if a == 194 and b == 160 then 2                                  // U+00A0
+  else if a == 239 and b == 187 and c == 191 then 3                // U+FEFF
+  else if a == 226 and b == 128 and ((c >= 128 and c <= 138) or c == 175) then 3   // U+2000..200A, U+202F
+  else if a == 226 and b == 129 and c == 159 then 3                // U+205F
+  else if a == 227 and b == 128 and c == 128 then 3                // U+3000
+  else if a == 225 and b == 154 and c == 128 then 3                // U+1680
+  else 0
+}
+
+// An identifier, from its first byte: ASCII letters, digits, `_`, `$`, any
+// non-ASCII byte, and `\uXXXX` escapes. `#name` is a private name.
+fn scan_word(buffer: Bytes, start: Int) -> Int = {
+  var i = if bytes.get_or(buffer, start, -1) == 35 then start + 1 else start
+  var scanning = true
+  while scanning {
+    let b = bytes.get_or(buffer, i, -1)
+    if literals.ident_byte(b) then i = i + 1
+    else if b == 92 and bytes.get_or(buffer, i + 1, -1) == 117 then {
+      // \u{…} or \uXXXX
+      if bytes.get_or(buffer, i + 2, -1) == 123 then {
+        var j = i + 3
+        while literals.hex(bytes.get_or(buffer, j, -1)) { j = j + 1 }
+        i = if bytes.get_or(buffer, j, -1) == 125 then j + 1 else j
+      } else i = i + 6
+    }
+    else scanning = false
+  }
+  i
+}
+
+// ── the scanner ───────────────────────────────────────────────────────────
+type Tables = { ops: Operators, word_table: words.Words }
+fn prepare(split_gt: Bool) -> Tables = Tables { ops: operators(split_gt), word_table: words.prepare() }
+
+fn scan_prepared(source: String, p: Tables, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = {
+  let buffer = bytes.from_string(source)
+  let n = bytes.len(buffer)
+  var tokens: List[tree.Token] = []
+  var braces: List[Int] = []
+  var parens: List[Int] = []
+  var prev = P_NONE
+  var prev_op = 0           // the packed operator of the previous token, if it was one
+  var prev_word = words.W_PLAIN
+  var prev_was_word = false
+  var since_function = 99   // tokens since a `function` word, for `function name (`
+  var after_do = false      // the previous token closed the body of a `do`
+  var do_pending = false    // a `do` whose body is not a block: its `while` is still to come
+  var decorated = false     // a `@` opened a decorator: the next line break joins
+  var nl_seen = false
+  var nl_at = 0
+  var nl_line = 1
+  var nl_line_start = 0
+  var i = 0
+  var line = 1
+  var line_start = 0
+  // a shebang line is not code
+  if bytes.get_or(buffer, 0, -1) == 35 and bytes.get_or(buffer, 1, -1) == 33 then {
+    while i < n and not literals.line_end(bytes.get_or(buffer, i, -1)) { i = i + 1 }
+  } else ()
+  while i < n {
+    let b = bytes.get_or(buffer, i, -1)
+    let start = i
+    let first_line = line
+    let first_line_start = line_start
+    var kind = tree.T_NONE
+    var next_class = P_NONE
+    var this_op = 0
+    var this_word = words.W_PLAIN
+    var failure: Option[lex.LexError] = none
+    var recover_end = -1
+    var template_closed = false
+    let uspace = if b >= 128 then unicode_space(buffer, i) else 0
+    if is_space(b) then i = i + 1
+    else if uspace > 0 then i = i + uspace
+    else if literals.line_end(b) then {
+      if not nl_seen then { nl_seen = true; nl_at = i; nl_line = line; nl_line_start = line_start } else ()
+      i = newline_end(buffer, i)
+    }
+    else if literals.unicode_line_end(buffer, i) then {
+      if not nl_seen then { nl_seen = true; nl_at = i; nl_line = line; nl_line_start = line_start } else ()
+      i = i + 3
+    }
+    else if b == 47 and bytes.get_or(buffer, i + 1, -1) == 47 then {
+      while i < n and not literals.line_end(bytes.get_or(buffer, i, -1)) and not literals.unicode_line_end(buffer, i) { i = i + 1 }
+    }
+    else if b == 47 and bytes.get_or(buffer, i + 1, -1) == 42 then {
+      var j = i + 2
+      var closed = false
+      while not closed and j < n {
+        let c = bytes.get_or(buffer, j, -1)
+        if c == 42 and bytes.get_or(buffer, j + 1, -1) == 47 then closed = true
+        else {
+          if literals.line_end(c) or literals.unicode_line_end(buffer, j) then {
+            if not nl_seen then { nl_seen = true; nl_at = j; nl_line = line; nl_line_start = line_start } else ()
+          } else ()
+          j = j + 1
+        }
+      }
+      if closed then i = j + 2
+      else {
+        guard recovering else err(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unterminated block comment" })
+        kind = tree.T_ERROR
+        i = n
+      }
+    }
+    else if b == 34 or b == 39 then {
+      kind = tree.T_STRING
+      next_class = P_OPERAND
+      match literals.scan_string(buffer, i, line, i - line_start + 1) {
+        ok(end) => { i = end },
+        err(e) => { failure = some(e); recover_end = literals.string_recovery_end(buffer, i) },
+      }
+    }
+    else if b == 96 then {
+      // a template's first segment: whole, or up to its first `$` `{`
+      match literals.scan_template_segment(buffer, i, line, i - line_start + 1) {
+        ok(seg) => {
+          kind = tree.T_TSTRING_START
+          i = seg.end
+          if seg.kind == literals.SEG_OPEN then { list.push(braces, B_TEMPLATE); next_class = P_PUNCT }
+          else { next_class = P_OPERAND; template_closed = true }
+        },
+        err(e) => { failure = some(e); recover_end = n },
+      }
+    }
+    else if b == 47 and prev != P_OPERAND and bytes.get_or(buffer, i + 1, -1) != 42 and bytes.get_or(buffer, i + 1, -1) != 47 then {
+      // a regular expression: what a `/` is unless an operand precedes it
+      kind = tree.T_STRING
+      next_class = P_OPERAND
+      match literals.scan_regex(buffer, i, line, i - line_start + 1) {
+        ok(end) => { i = end },
+        err(e) => { failure = some(e); recover_end = literals.string_recovery_end(buffer, i) },
+      }
+    }
+    else if literals.starts_number(buffer, i) then {
+      kind = tree.T_NUMBER
+      next_class = P_OPERAND
+      match literals.scan_number(buffer, i, line, i - line_start + 1) {
+        ok(end) => { i = end },
+        err(e) => { failure = some(e); recover_end = scan_word(buffer, literals.digits_of(buffer, i, 16)) },
+      }
+    }
+    else if ident_start(b) or (b == 35 and ident_start(bytes.get_or(buffer, i + 1, -1))) then {
+      kind = tree.T_IDENTIFIER
+      i = scan_word(buffer, i)
+      if i == start then failure = some(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unexpected character" })
+      else {
+        this_word = words.classify(p.word_table, buffer, start, i)
+        next_class = if words.restricted(this_word) then P_RESTRICTED
+          else if words.before_operand(this_word) then P_WORD_OPERAND
+          else if words.before_statement(this_word) then P_WORD_STATEMENT
+          else P_OPERAND
+      }
+    }
+    else {
+      let op = operator_at(p.ops, buffer, i, b)
+      // `?.5` is `?` then `.5`
+      let op2 = if op == OP_QDOT and literals.digit(bytes.get_or(buffer, i + 2, -1)) then pack("?") else op
+      if op2 != 0 then {
+        kind = tree.T_PUNCT
+        this_op = op2
+        i = i + width_of(op2)
+        next_class = P_PUNCT
+        if op2 == OP_LBRACE then {
+          let tag = if prev == P_NONE or prev == P_OPERAND or prev == P_BLOCK_END then B_BLOCK
+            else if prev == P_RESTRICTED or prev == P_WORD_OPERAND then B_OBJECT
+            else if prev == P_WORD_STATEMENT then (if prev_word == words.W_DO then B_DO else B_BLOCK)
+            else if prev_op == OP_RPAREN or prev_op == OP_ARROW or prev_op == OP_SEMI or prev_op == OP_LBRACE or prev_op == OP_RBRACE then B_BLOCK
+            else if prev_op == OP_COLON then (if (list.last(braces) ?? B_BLOCK) == B_OBJECT then B_OBJECT else B_BLOCK)
+            else B_OBJECT
+          list.push(braces, tag)
+          if tag != B_OBJECT then decorated = false else ()
+        }
+        else if op2 == OP_RBRACE then {
+          let tag = list.pop(braces) ?? B_BLOCK
+          if tag == B_TEMPLATE then {
+            // the substitution is over: the next segment of the template
+            match literals.scan_template_segment(buffer, start, line, start - line_start + 1) {
+              ok(seg) => {
+                i = seg.end
+                if seg.kind == literals.SEG_OPEN then { kind = tree.T_TSTRING_MIDDLE; list.push(braces, B_TEMPLATE); next_class = P_PUNCT }
+                else { kind = tree.T_TSTRING_END; next_class = P_OPERAND }
+              },
+              err(e) => { failure = some(e); recover_end = n },
+            }
+          }
+          else if tag == B_OBJECT then next_class = P_OPERAND
+          else { next_class = P_BLOCK_END; after_do = tag == B_DO }
+        }
+        else if op2 == OP_LPAREN then {
+          let header = (words.opens_header(prev_word) and prev_was_word and not (prev_word == words.W_WHILE and after_do))
+            or since_function <= 2
+          list.push(parens, if header then PAREN_HEADER else PAREN_PLAIN)
+        }
+        else if op2 == OP_RPAREN then {
+          next_class = if (list.pop(parens) ?? PAREN_PLAIN) == PAREN_HEADER then P_PUNCT else P_OPERAND
+        }
+        else if op2 == OP_RBRACK then next_class = P_OPERAND
+        else ()
+      } else {
+        guard recovering else err(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unexpected character" })
+        kind = tree.T_ERROR
+        next_class = P_OPERAND
+        i = i + (if b >= 240 then 4 else if b >= 224 then 3 else if b >= 192 then 2 else 1)
+      }
+    }
+    match failure {
+      some(e) => {
+        guard recovering else err(e)
+        kind = tree.T_ERROR
+        next_class = P_OPERAND
+        i = int.max(recover_end, start + 1)
+      },
+      none => (),
+    }
+    // count the lines the token or comment spanned, before anything is
+    // emitted at its end
+    var at = start
+    while at < i {
+      let c = bytes.get_or(buffer, at, -1)
+      if literals.line_end(c) then { at = newline_end(buffer, at); line = line + 1; line_start = at }
+      else if literals.unicode_line_end(buffer, at) then { at = at + 3; line = line + 1; line_start = at }
+      else at = at + 1
+    }
+    if kind != tree.T_NONE then {
+      // the line break before this token: a separator, or nothing
+      if nl_seen then {
+        let is_punct = kind == tree.T_PUNCT
+        let is_word = kind == tree.T_IDENTIFIER
+        let template_goes_on = kind == tree.T_TSTRING_MIDDLE or kind == tree.T_TSTRING_END
+        let separate = if decorated or template_goes_on then false
+          else if prev == P_RESTRICTED then true
+          else if prev == P_OPERAND then
+            (if is_punct then punct_starts_statement(this_op)
+             else if is_word then not word_continues_operand(this_word)
+             else kind != tree.T_TSTRING_START)
+          else if prev == P_BLOCK_END then
+            (if is_punct then punct_starts_statement(this_op) or this_op == OP_LPAREN or this_op == OP_LBRACK
+             else if is_word then not word_continues_block(this_word, after_do)
+             else true)
+          else false
+        if decorated and not (is_punct and this_op == OP_AT) then decorated = false else ()
+        if separate then list.push(tokens, make(tree.T_NEWLINE, nl_at, newline_end(buffer, nl_at), nl_line, nl_line_start)) else ()
+        nl_seen = false
+      } else ()
+      list.push(tokens, make(kind, start, i, first_line, first_line_start))
+      // a template with no substitution still ends: a zero-width end marker
+      if template_closed then list.push(tokens, make(tree.T_TSTRING_END, i, i, line, line_start)) else ()
+      // a decorator: the line break after it joins, decided above for the
+      // `@` itself and here for what follows it
+      if kind == tree.T_PUNCT and this_op == OP_AT then decorated = true else ()
+      if kind == tree.T_IDENTIFIER and this_word == words.W_CLASS then decorated = false else ()
+      // the `while` of a `do`: after its body's `}`, or after a body with no braces
+      if kind == tree.T_IDENTIFIER and this_word == words.W_DO then do_pending = true
+      else if kind == tree.T_PUNCT and this_op == OP_LBRACE and prev == P_WORD_STATEMENT and prev_word == words.W_DO then do_pending = false
+      else if kind == tree.T_IDENTIFIER and this_word == words.W_WHILE and do_pending then { do_pending = false; after_do = true }
+      else ()
+      prev = next_class
+      prev_op = if kind == tree.T_PUNCT then this_op else 0
+      // `for await (` is still the header of a `for`
+      let keeps_for = this_word == words.W_AWAIT and prev_was_word and prev_word == words.W_FOR
+      if kind == tree.T_IDENTIFIER and not keeps_for then prev_word = this_word else ()
+      prev_was_word = kind == tree.T_IDENTIFIER
+      since_function = if kind == tree.T_IDENTIFIER and this_word == words.W_FUNCTION then 0
+        else if since_function < 99 and (kind == tree.T_IDENTIFIER or (kind == tree.T_PUNCT and this_op == OP_STAR)) then since_function + 1
+        else 99
+      if not (kind == tree.T_PUNCT and this_op == OP_RBRACE) and not (kind == tree.T_IDENTIFIER and this_word == words.W_WHILE) then after_do = false else ()
+    } else ()
+  }
+  if not list.is_empty(braces) and (list.last(braces) ?? B_BLOCK) == B_TEMPLATE then {
+    guard recovering else err(lex.LexError { line: line, col: i - line_start + 1, message: "unterminated template literal" })
+  } else ()
+  list.push(tokens, make(tree.T_EOF, i, i, line, line_start))
+  ok(tokens)
+}
+
+fn scan(source: String, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = scan_prepared(source, prepare(false), recovering)
+
+// ── tests ─────────────────────────────────────────────────────────────────
+fn texts(src: String) -> List[String] = match scan(src, false) {
+  ok(toks) => list.map(toks, (t) => if t.kind == tree.T_NEWLINE then "⏎" else if t.kind == tree.T_EOF then "" else tree.token_text(bytes.from_string(src), t)),
+  err(e) => ["LEX ERROR " + int.to_string(e.line) + ":" + int.to_string(e.col) + " " + e.message],
+}
+
+test "a slash divides after an operand and opens a regex anywhere else" {
+  assert_eq(texts("a / b / c"), ["a", "/", "b", "/", "c", ""])
+  assert_eq(texts("x = /a[/]b/gi.test(y)"), ["x", "=", "/a[/]b/gi", ".", "test", "(", "y", ")", ""])
+  assert_eq(texts("f(a) / 2"), ["f", "(", "a", ")", "/", "2", ""])
+  assert_eq(texts("if (a) /re/.test(b)"), ["if", "(", "a", ")", "/re/", ".", "test", "(", "b", ")", ""])
+  assert_eq(texts("return /re/"), ["return", "/re/", ""])
+  assert_eq(texts("x = {} / 2"), ["x", "=", "{", "}", "/", "2", ""])
+  assert_eq(texts("{} /re/"), ["{", "}", "/re/", ""])
+  assert_eq(texts("a[0] / 2"), ["a", "[", "0", "]", "/", "2", ""])
+}
+
+test "templates come out in segments around their substitutions" {
+  assert_eq(texts("`plain`"), ["`plain`", "", ""])
+  assert_eq(texts("`a\${x}b\${ {y: 1}.y }c`"), ["`a\${", "x", "}b\${", "{", "y", ":", "1", "}", ".", "y", "}c`", ""])
+  assert_eq(texts("`\${`inner\${z}`}`"), ["`\${", "`inner\${", "z", "}`", "}`", ""])
+  assert_eq(texts("tag`x`"), ["tag", "`x`", "", ""])
+}
+
+test "a line break separates statements only where the specification inserts a semicolon" {
+  assert_eq(texts("a\nb"), ["a", "⏎", "b", ""])
+  assert_eq(texts("a\n+ b"), ["a", "+", "b", ""])
+  assert_eq(texts("a\n(b)"), ["a", "(", "b", ")", ""])
+  assert_eq(texts("a\n.b"), ["a", ".", "b", ""])
+  assert_eq(texts("a\n++b"), ["a", "⏎", "++", "b", ""])
+  assert_eq(texts("return\nx"), ["return", "⏎", "x", ""])
+  assert_eq(texts("if (a)\n  b()\nelse\n  c()"), ["if", "(", "a", ")", "b", "(", ")", "⏎", "else", "c", "(", ")", ""])
+  assert_eq(texts("f(a,\n  b)"), ["f", "(", "a", ",", "b", ")", ""])
+  assert_eq(texts("x = {\n  a: 1\n}\nfoo()"), ["x", "=", "{", "a", ":", "1", "}", "⏎", "foo", "(", ")", ""])
+  assert_eq(texts("function f() {\n}\n(g)()"), ["function", "f", "(", ")", "{", "}", "⏎", "(", "g", ")", "(", ")", ""])
+  assert_eq(texts("x = y\n{ z }"), ["x", "=", "y", "⏎", "{", "z", "}", ""])
+  assert_eq(texts("do\n  x()\nwhile (y)\nz()"), ["do", "x", "(", ")", "⏎", "while", "(", "y", ")", "⏎", "z", "(", ")", ""])
+  assert_eq(texts("do {\n} while (y)\nz()"), ["do", "{", "}", "while", "(", "y", ")", "⏎", "z", "(", ")", ""])
+  assert_eq(texts("try {\n} catch (e) {\n} finally {\n}\nnext()"), ["try", "{", "}", "catch", "(", "e", ")", "{", "}", "finally", "{", "}", "⏎", "next", "(", ")", ""])
+  assert_eq(texts("@dec\nclass A {\n  x = 1\n  y = 2\n}"), ["@", "dec", "class", "A", "{", "x", "=", "1", "⏎", "y", "=", "2", "}", ""])
+  assert_eq(texts("async\nfunction f() {}"), ["async", "⏎", "function", "f", "(", ")", "{", "}", ""])
+  assert_eq(texts("x\n`t`"), ["x", "`t`", "", ""])
+  assert_eq(texts("/* a\n b */ x\ny"), ["x", "⏎", "y", ""])
+}
+
+test "numbers, private names, unicode and the shebang" {
+  assert_eq(texts("#!/usr/bin/env node\nlet x = 1_0n + .5"), ["let", "x", "=", "1_0n", "+", ".5", ""])
+  assert_eq(texts("this.#count++"), ["this", ".", "#count", "++", ""])
+  assert_eq(texts("const 日本 = \\u0041bc; a?.b ?? c ? .5 : d"), ["const", "日本", "=", "\\u0041bc", ";", "a", "?.", "b", "??", "c", "?", ".5", ":", "d", ""])
+  assert_eq(texts("x >>>= 1; y >>> 2; z >> 3"), ["x", ">>>=", "1", ";", "y", ">>>", "2", ";", "z", ">>", "3", ""])
+}
+
+test "an unterminated literal is an error, or in recovery one error token on its line" {
+  assert(result.is_err(scan("x = 'abc\ny = 1", false)))
+  assert(result.is_err(scan("x = `abc", false)))
+  assert(result.is_err(scan("x = 3in", false)))
+  match scan("x = 'abc\ny = 1", true) {
+    ok(toks) => assert_eq(lex.kinds(toks), ["identifier", "punct", "error", "newline", "identifier", "punct", "number", "eof"]),
+    err(_) => assert(false),
+  }
+}

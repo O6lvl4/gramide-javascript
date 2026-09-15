@@ -1,0 +1,6 @@
+{
+  "name": "gramide-javascript-ci",
+  "private": true,
+  "description": "The oracle: the TypeScript compiler's parser, pinned",
+  "dependencies": { "typescript": "5.9.3" }
+}

@@ -1,0 +1,129 @@
+// grammar — the JavaScript grammar, as a value.
+//
+// Written against ECMAScript 2025. The tree it produces is what `outline`
+// walks, so the node kinds that matter are the declarations
+// (function_declaration, class_declaration, method_definition,
+// field_definition, const_declarator, let_declarator, var_declarator,
+// function_binding) and their `name` fields. Expressions get a shallow
+// tree: binary operators fold into `binary` nodes, a postfix chain stays
+// flat, which is all a syntax gate or an outline needs.
+//
+// The grammar is composed from `expressions`, `declarations` and
+// `statements`. Some of its rules exist only to be replaced: every rule whose
+// body is `seq([])` or `nothing()` is an extension point, named in the
+// module that holds it, and `with_overrides` is how another package — the
+// TypeScript one — puts its own rule under that name. Deliberately more
+// permissive than an engine in a few places (`a + b = c` parses; `in` is
+// not refused in a `for` initialiser): a file gramide accepts may still fail
+// to run, but a file gramide rejects is broken for every engine too. That
+// direction is the one a syntax gate must get right.
+import gramide.names as nametable
+import gramide.parser
+import gramide.parser.{ grammar }
+import self.lexer
+import self.expressions
+import self.declarations
+import self.statements
+
+let START = "source_file"
+
+fn base_rules() -> List[(String, parser.Rule)] = statements.rules() + declarations.rules() + expressions.rules()
+
+// The base rules with some replaced by name: the last word on a name wins.
+fn with_overrides(base: List[(String, parser.Rule)], overrides: List[(String, parser.Rule)]) -> List[(String, parser.Rule)] = {
+  let replaced = list.map(overrides, (o) => o.0)
+  list.filter(base, (rule) => not list.contains(replaced, rule.0)) + overrides
+}
+
+fn rules() -> parser.Grammar = grammar(START, base_rules())
+
+// ── tests ──────────────────────────────────────────────────────────────
+fn parse_src(src: String) -> Result[parser.Parsed, String] = {
+  let toks = lexer.scan(src, false) |> result.map_err((e) => "lex " + int.to_string(e.line) + ":" + int.to_string(e.col) + " " + e.message)!
+  parser.parse(rules(), bytes.from_string(src), toks) |> result.map_err((f) => parser.format_failure(f))
+}
+
+fn top_kinds(src: String) -> List[String] = match parse_src(src) {
+  ok(p) => list.map(p.root.kids, (k) => nametable.name_at(p.names, k.kind)),
+  err(e) => ["ERROR " + e],
+}
+
+// what a reader gets from a file that does not parse
+fn recovered_kinds(src: String) -> List[String] = {
+  let toks = match lexer.scan(src, true) { ok(t) => t, err(_) => [] }
+  match parser.parse_recovering(parser.compile(rules()), bytes.from_string(src), toks) {
+    ok(p) => list.map(p.root.kids, (k) => nametable.name_at(p.names, k.kind)),
+    err(_) => ["NOTHING"],
+  }
+}
+
+test "a small module parses with the right declaration kinds" {
+  let src = """
+'use strict'
+import fs, { readFile as read } from "node:fs"
+import * as path from 'path'
+
+export const VERSION = "1.0", limit = 3
+let count = 0
+var legacy
+
+export default class Widget extends Base {
+  static #registry = new Map()
+  #size = 0
+  static { Widget.#registry.clear() }
+  constructor(name, ...rest) { super(name); this.#size = rest.length }
+  get size() { return this.#size }
+  set size(v) { this.#size = v }
+  async *items() { yield* this.list; for await (const x of this.more()) yield x }
+  static of(...xs) { return new Widget(xs[0]) }
+}
+
+export function render(widget, { depth = 1, ...opts } = {}) {
+  const lines = []
+  for (let i = 0, n = widget.size; i < n; i++) lines.push(`item \${i}: \${widget.items()[i] ?? 'none'}`)
+  for (const key in opts) if (!opts[key]) continue; else delete opts[key]
+  label: while (true) { do { break label } while (false) }
+  switch (typeof widget) { case 'object': return lines.join('\\n'); default: throw new TypeError(`bad \${widget}`) }
+}
+
+export const helper = async (a, b = 2) => a ** b
+const handlers = { onClick() {}, get value() { return 1 }, [computed]: 1, ...rest, async: true }
+export { count as total, legacy }
+export * from './more.js'
+"""
+  assert_eq(top_kinds(src), ["expression_statement", "import_statement", "import_statement", "const_declaration", "let_declaration",
+    "var_declaration", "export_statement", "export_statement", "const_declaration", "const_declaration", "export_statement", "export_statement"])
+}
+
+test "regexes, templates, arrows and semicolon insertion parse as the specification reads them" {
+  assert_eq(top_kinds("const re = /ab+c/gi.test(s) ? a / b : c\nlet f = x => x * 2\nlet g = async ({ a }, [b]) => { return a }\n"), ["const_declaration", "let_declaration", "let_declaration"])
+  assert_eq(top_kinds("a = b\n(c)\nd\n++e\nreturn\n"), ["expression_statement", "expression_statement", "expression_statement", "return_statement"])
+  assert_eq(top_kinds("x = { a: 1 }\n[1, 2].forEach(f)\n"), ["expression_statement"])
+  assert_eq(top_kinds("if (a) b()\nelse if (c) d()\nelse { e() }\n"), ["if_statement"])
+  assert_eq(top_kinds("class A { get() {} set = 1; static async\n() {} }\n"), ["class_declaration"])
+  assert_eq(top_kinds("new new X()()\nnew.target\nimport.meta.url\nawait import('x')\n"), ["expression_statement", "expression_statement", "expression_statement", "expression_statement"])
+  assert_eq(top_kinds("@dec()\n@other\nclass A { @m() foo() {} }\n"), ["class_declaration"])
+  assert_eq(top_kinds("function* g() { const x = yield 1; yield* other() }\n"), ["function_declaration"])
+  assert_eq(top_kinds("try { f() } catch { g() } finally { h() }\ntry {} catch (e) {}\n"), ["try_statement", "try_statement"])
+}
+
+test "what does not parse says where" {
+  match parse_src("function f() {\n  return (1\n}\n") {
+    ok(_) => assert(false),
+    err(e) => assert(string.starts_with(e, "3:")),
+  }
+  match parse_src("if (a) b() else c()\n") {
+    ok(_) => assert(false),
+    err(e) => assert(string.starts_with(e, "1:")),
+  }
+}
+
+test "a broken declaration keeps its name and the rest of the file survives" {
+  let src = "function alpha() { return 1 }\n\nfunction beta( {\n\nfunction gamma() { return 3 }\n"
+  match parse_src(src) { ok(_) => assert(false), err(_) => () }
+  let kinds = recovered_kinds(src)
+  assert(list.contains(kinds, "function_declaration"))
+  assert(list.contains(kinds, "ERROR"))
+  let fine = "function alpha() { return 1 }\n"
+  assert_eq(recovered_kinds(fine), top_kinds(fine))
+}

@@ -1,0 +1,145 @@
+// declarations — functions, classes, bindings, imports and exports: the
+// nodes an outline is made of.
+//
+// A binding declared at the top of a file is a `const_declarator` (or
+// `let_` / `var_`), which the symbol rules list; the same binding inside a
+// body is a `local_const_declarator`, which they do not, because a function
+// with forty locals is not forty symbols. `const f = () => …` at the top is a
+// `function_binding`: what the file exports as a function reads as one.
+//
+// The rules named `type_annotation`, `binding_marks`, `param_modifiers`,
+// `class_modifiers`, `class_heritage`, `member_modifiers`, `method_body_extra`,
+// `extra_member`, `import_kind`, `export_extra` and `extra_declaration` are
+// the TypeScript package's to replace.
+import gramide.parser
+import gramide.parser.{ tok, lit, keep, r, seq, alt, rep, opt, wrap, field, ahead, nott, lits, keeps, nothing }
+import self.common
+import self.common.{ ident, sep, osep, eos, items }
+
+// `static`, `async`, `get`, `set` are modifiers only when a member name (or
+// a `*`) follows; `get() {}` is a method named get.
+fn modifier(word: String) -> parser.Rule = seq([lit(word), ahead(alt([r("property_name"), lit("*"), lit("#")]))])
+
+// A binding, with a name only when it is a plain name: a pattern declares
+// several names or none, and an outline lists none of them.
+fn binding_with_name() -> parser.Rule = alt([field("name", r("name")), r("object_pattern"), r("array_pattern")])
+
+// var / let / const at two depths: `prefix` is "" at the top of a file and
+// "local_" inside a body.
+fn declared(word: String, prefix: String) -> List[(String, parser.Rule)] = [
+  // `export const x = 1` is one declaration from `export`: the keyword is
+  // read here, not by export_statement, so the declarator's envelope holds it
+  (prefix + word + "_declaration", wrap(word + "_declaration", seq([
+    if prefix == "" then opt(lit("export")) else seq([]),
+    lit(word), r(prefix + word + "_declarator"), rep(seq([lit(","), r(prefix + word + "_declarator")])), eos()
+  ]))),
+  (prefix + word + "_declarator", alt([
+    wrap(if prefix == "" then "function_binding" else "local_function_binding", seq([
+      field("name", r("name")), r("binding_marks"), r("type_annotation"), lit("="), alt([r("arrow_function"), r("function_expression")]), nott(lit(","))
+    ])),
+    wrap(prefix + word + "_declarator", seq([binding_with_name(), r("binding_marks"), r("type_annotation"), opt(seq([lit("="), r("assignment")]))])),
+  ])),
+]
+
+fn rules() -> List[(String, parser.Rule)] = [
+  ("declaration", alt([r("function_declaration"), r("class_declaration"), r("variable_declaration"), r("extra_declaration")])),
+  ("local_declaration", alt([r("function_declaration"), r("class_declaration"), r("local_variable_declaration"), r("extra_declaration")])),
+  ("variable_declaration", alt([r("const_declaration"), r("let_declaration"), r("var_declaration"), r("using_declaration"), seq([lit("await"), r("using_declaration")])])),
+  ("local_variable_declaration", alt([r("local_const_declaration"), r("local_let_declaration"), r("local_var_declaration"), r("local_using_declaration"), seq([lit("await"), r("local_using_declaration")])])),
+
+  // ── functions ─────────────────────────────────────────────────────────
+  ("function_declaration", wrap("function_declaration", seq([
+    opt(lit("async")), lit("function"), opt(lit("*")), field("name", r("name")),
+    r("type_parameters"), r("parameters"), r("return_annotation"), alt([r("block"), r("method_body_extra")])
+  ]))),
+  ("function_expression", wrap("function_expression", seq([
+    opt(lit("async")), lit("function"), opt(lit("*")), opt(field("name", r("name"))),
+    r("type_parameters"), r("parameters"), r("return_annotation"), r("block")
+  ]))),
+  ("parameters", wrap("parameters", seq([lit("("), items(r("parameter")), lit(")")]))),
+  ("parameter", wrap("parameter", seq([
+    r("decorators"), r("param_modifiers"), opt(lit("...")), binding_with_name(), r("binding_marks"), r("type_annotation"),
+    opt(seq([lit("="), r("assignment")]))
+  ]))),
+
+  // ── binding patterns ──────────────────────────────────────────────────
+  ("binding_target", alt([r("name"), r("object_pattern"), r("array_pattern")])),
+  ("binding_element", seq([r("binding_target"), opt(seq([lit("="), r("assignment")]))])),
+  ("object_pattern", wrap("object_pattern", seq([lit("{"), items(alt([
+    wrap("rest", seq([lit("..."), r("binding_target")])),
+    seq([r("property_name"), lit(":"), r("binding_element")]),
+    r("binding_element"),
+  ])), lit("}")]))),
+  ("array_pattern", wrap("array_pattern", seq([lit("["), rep(alt([
+    lit(","),
+    seq([alt([wrap("rest", seq([lit("..."), r("binding_target")])), r("binding_element")]), alt([lit(","), ahead(lit("]"))])]),
+  ])), lit("]")]))),
+
+  // ── classes ───────────────────────────────────────────────────────────
+  ("class_declaration", wrap("class_declaration", seq([
+    r("decorators"), r("class_modifiers"), lit("class"), field("name", r("name")), r("type_parameters"), r("class_heritage"), r("class_body")
+  ]))),
+  ("class_expression", wrap("class_expression", seq([
+    r("decorators"), lit("class"), opt(field("name", r("name"))), r("type_parameters"), r("class_heritage"), r("class_body")
+  ]))),
+  ("class_body", wrap("class_body", seq([lit("{"), osep(), rep(parser.recover(seq([r("class_member"), osep()]))), lit("}")]))),
+  ("class_member", alt([
+    wrap("static_block", seq([lit("static"), r("block")])),
+    r("method_definition"),
+    r("field_definition"),
+    r("extra_member"),
+  ])),
+  ("method_definition", wrap("method_definition", seq([
+    r("decorators"), r("member_modifiers"), field("name", r("property_name")),
+    r("binding_marks"), r("type_parameters"), r("parameters"), r("return_annotation"), alt([r("block"), r("method_body_extra")])
+  ]))),
+  ("field_definition", wrap("field_definition", seq([
+    r("decorators"), r("member_modifiers"), field("name", r("property_name")), r("binding_marks"), r("type_annotation"),
+    opt(seq([lit("="), r("assignment")])), ahead(alt([sep(), lit("}")]))
+  ]))),
+  ("member_modifiers", rep(alt([modifier("static"), modifier("async"), modifier("get"), modifier("set"), lit("*")]))),
+  ("decorators", rep(wrap("decorator", seq([lit("@"), r("decorator_expr")])))),
+  ("decorator_expr", seq([
+    alt([wrap("group", seq([lit("("), r("expression"), lit(")")])), r("name")]),
+    rep(alt([wrap("field_access", seq([lit("."), field("field", ident())])), wrap("arguments", seq([lit("("), items(r("argument")), lit(")")]))]))
+  ])),
+
+  // ── modules ───────────────────────────────────────────────────────────
+  ("import_statement", wrap("import_statement", seq([
+    lit("import"), r("import_kind"),
+    alt([seq([r("import_clause"), lit("from"), tok("string")]), tok("string")]),
+    r("import_attributes"), eos()
+  ]))),
+  ("import_clause", alt([
+    seq([r("name"), opt(seq([lit(","), alt([r("namespace_import"), r("named_imports")])]))]),
+    r("namespace_import"), r("named_imports"),
+  ])),
+  ("namespace_import", seq([lit("*"), lit("as"), r("name")])),
+  ("named_imports", seq([lit("{"), items(seq([r("import_kind"), alt([ident(), tok("string")]), opt(seq([lit("as"), r("name")]))])), lit("}")])),
+  ("import_attributes", opt(seq([lits(["with", "assert"]), r("object")]))),
+  ("export_statement", wrap("export_statement", seq([r("decorators"), lit("export"), alt([
+    seq([lit("default"), alt([
+      r("function_declaration"), r("class_declaration"),
+      seq([r("function_expression"), eos()]), seq([r("class_expression"), eos()]),
+      seq([r("assignment"), eos()]),
+    ])]),
+    seq([lit("*"), opt(seq([lit("as"), alt([ident(), tok("string")])])), lit("from"), tok("string"), r("import_attributes"), eos()]),
+    seq([r("import_kind"), lit("{"), items(seq([r("import_kind"), alt([ident(), tok("string")]), opt(seq([lit("as"), alt([ident(), tok("string")])]))])), lit("}"),
+      opt(seq([lit("from"), tok("string"), r("import_attributes")])), eos()]),
+    r("function_declaration"), r("class_declaration"), r("extra_declaration"),
+    r("export_extra"),
+  ])]))),
+
+  // extension points: what TypeScript adds to a declaration
+  ("type_annotation", seq([])),
+  ("binding_marks", seq([])),
+  ("param_modifiers", seq([])),
+  ("class_modifiers", seq([])),
+  ("class_heritage", opt(seq([lit("extends"), r("postfix_expr")]))),
+  ("method_body_extra", nothing()),
+  ("extra_member", nothing()),
+  ("import_kind", seq([])),
+  ("export_extra", nothing()),
+  ("extra_declaration", nothing()),
+] + declared("const", "") + declared("let", "") + declared("var", "") + declared("using", "")
+  + declared("const", "local_") + declared("let", "local_") + declared("var", "local_") + declared("using", "local_")

@@ -1,0 +1,24 @@
+{
+  "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+  "node": "v22.23.1",
+  "typescript": "5.9.3",
+  "binary_sha256": "b8b825fe7a5c35fd105c708834f0af1de84974d9e25c9ac6223d1a78bc475e75",
+  "root": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/node/lib",
+  "ext": [
+    ".js",
+    ".mjs",
+    ".cjs"
+  ],
+  "excluded": [],
+  "files": 427,
+  "bytes": 5717799,
+  "check_seconds": 0.026,
+  "megabytes_per_second": 219.7,
+  "reference_rejected": [],
+  "gramide_rejected": [],
+  "range_mismatch": [],
+  "passed": 427,
+  "symbols": 11470,
+  "reference_commit": "5c5bd227b0fea6861b1d75d772dac402d79b10da",
+  "input_sha256": "0c76e5092af712cad342265ec67795e9a1e0d62a5b2159f84ce17445cf8a5997"
+}
