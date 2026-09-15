@@ -9,8 +9,8 @@
 //
 // The rules named `type_annotation`, `binding_marks`, `param_modifiers`,
 // `class_modifiers`, `class_heritage`, `member_modifiers`, `method_body_extra`,
-// `extra_member`, `import_kind`, `export_extra` and `extra_declaration` are
-// the TypeScript package's to replace.
+// `extra_member`, `import_kind`, `export_extra`, `extra_declaration` and
+// `declaration_prefix` are the TypeScript package's to replace.
 import gramide.parser
 import gramide.parser.{ tok, lit, keep, r, seq, alt, rep, opt, wrap, field, ahead, nott, lits, keeps, nothing }
 import self.common
@@ -30,7 +30,7 @@ fn declared(word: String, prefix: String) -> List[(String, parser.Rule)] = [
   // `export const x = 1` is one declaration from `export`: the keyword is
   // read here, not by export_statement, so the declarator's envelope holds it
   (prefix + word + "_declaration", wrap(word + "_declaration", seq([
-    if prefix == "" then opt(lit("export")) else seq([]),
+    if prefix == "" then seq([opt(lit("export")), r("declaration_prefix")]) else seq([]),
     lit(word), r(prefix + word + "_declarator"), rep(seq([lit(","), r(prefix + word + "_declarator")])), eos()
   ]))),
   (prefix + word + "_declarator", alt([
@@ -49,7 +49,7 @@ fn rules() -> List[(String, parser.Rule)] = [
 
   // ── functions ─────────────────────────────────────────────────────────
   ("function_declaration", wrap("function_declaration", seq([
-    opt(lit("async")), lit("function"), opt(lit("*")), field("name", r("name")),
+    r("declaration_prefix"), opt(lit("async")), lit("function"), opt(lit("*")), field("name", r("name")),
     r("type_parameters"), r("parameters"), r("return_annotation"), alt([r("block"), r("method_body_extra")])
   ]))),
   ("function_expression", wrap("function_expression", seq([
@@ -77,7 +77,7 @@ fn rules() -> List[(String, parser.Rule)] = [
 
   // ── classes ───────────────────────────────────────────────────────────
   ("class_declaration", wrap("class_declaration", seq([
-    r("decorators"), r("class_modifiers"), lit("class"), field("name", r("name")), r("type_parameters"), r("class_heritage"), r("class_body")
+    r("decorators"), r("declaration_prefix"), r("class_modifiers"), lit("class"), field("name", r("name")), r("type_parameters"), r("class_heritage"), r("class_body")
   ]))),
   ("class_expression", wrap("class_expression", seq([
     r("decorators"), lit("class"), opt(field("name", r("name"))), r("type_parameters"), r("class_heritage"), r("class_body")

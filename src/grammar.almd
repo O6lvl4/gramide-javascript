@@ -118,12 +118,10 @@ test "what does not parse says where" {
   }
 }
 
-test "a broken declaration keeps its name and the rest of the file survives" {
+test "a broken declaration becomes an ERROR node and the rest of the file survives, exactly" {
   let src = "function alpha() { return 1 }\n\nfunction beta( {\n\nfunction gamma() { return 3 }\n"
   match parse_src(src) { ok(_) => assert(false), err(_) => () }
-  let kinds = recovered_kinds(src)
-  assert(list.contains(kinds, "function_declaration"))
-  assert(list.contains(kinds, "ERROR"))
+  assert_eq(recovered_kinds(src), ["function_declaration", "ERROR", "function_declaration"])
   let fine = "function alpha() { return 1 }\n"
   assert_eq(recovered_kinds(fine), top_kinds(fine))
 }

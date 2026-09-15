@@ -1,10 +1,9 @@
 // statements — control flow, blocks and the file itself.
 //
 // A statement list recovers per statement inside braces (`recover`) and per
-// declaration at the top of the file (`recover_all_keeping`), where a
-// declaration whose body is half-typed still yields its kind and name.
+// declaration at the top of the file (`recover_all`).
 import gramide.parser
-import gramide.parser.{ tok, lit, keep, r, seq, alt, rep, opt, wrap, field, ahead, nott, lits, keeps, nothing, recover, recover_all_keeping }
+import gramide.parser.{ tok, lit, keep, r, seq, alt, rep, opt, wrap, field, ahead, nott, lits, keeps, nothing, recover, recover_all }
 import self.common
 import self.common.{ ident, sep, osep, eos, parenthesized }
 
@@ -20,16 +19,16 @@ fn statement(declaration_rule: String) -> parser.Rule = alt([
 ])
 
 fn rules() -> List[(String, parser.Rule)] = [
-  ("source_file", wrap("source_file", seq([osep(), rep(recover_all_keeping(seq([r("top_statement"), osep()]), r("decl_head")))]))),
-  // what is still worth knowing about a declaration whose body is half-typed:
-  // its kind and its name
-  ("decl_head", alt([
-    wrap("function_declaration", seq([opt(lit("export")), opt(lit("async")), lit("function"), opt(lit("*")), field("name", r("name"))])),
-    wrap("class_declaration", seq([r("decorators"), opt(lit("export")), opt(lit("default")), r("decorators"), lit("class"), field("name", r("name"))])),
-  ])),
+  // A declaration that does not parse is skipped whole, never kept as a
+  // partial head: what a recovered parse lists is exact, which is what lets
+  // the package advertise `symbols-recovered` and a reader select the intact
+  // declarations around the damage.
+  ("source_file", wrap("source_file", seq([osep(), rep(recover_all(seq([r("top_statement"), osep()])))]))),
   ("top_statement", statement("declaration")),
   ("statement", statement("local_declaration")),
   ("block", wrap("block", seq([lit("{"), osep(), rep(recover(seq([r("statement"), osep()]))), lit("}")]))),
+  // extension point: what TypeScript puts before a declaration (`declare`)
+  ("declaration_prefix", seq([])),
   ("expression_statement", wrap("expression_statement", seq([
     nott(lits(["function", "class", "{"])), nott(seq([lit("async"), lit("function")])), r("expression"), eos()
   ]))),
