@@ -114,6 +114,7 @@ let OP_NOT = pack("!")
 let OP_TILDE = pack("~")
 let OP_SPREAD = pack("...")
 let OP_STAR = pack("*")
+let OP_GT = pack(">")
 
 // ── what the scanner remembers ────────────────────────────────────────────
 // the class of the previous token
@@ -142,6 +143,7 @@ fn punct_starts_statement(op: Int) -> Bool =
 // after an operand, these words continue the expression or the declaration
 fn word_continues_operand(code: Int) -> Bool =
   code == words.W_IN or code == words.W_INSTANCEOF or code == words.W_OF or code == words.W_EXTENDS
+  or code == words.W_AS or code == words.W_SATISFIES
 // after the `}` of a block, these words continue the statement
 fn word_continues_block(code: Int, after_do: Bool) -> Bool =
   code == words.W_ELSE or code == words.W_CATCH or code == words.W_FINALLY or (code == words.W_WHILE and after_do)
@@ -188,8 +190,11 @@ fn scan_word(buffer: Bytes, start: Int) -> Int = {
 }
 
 // ── the scanner ───────────────────────────────────────────────────────────
-type Tables = { ops: Operators, word_table: words.Words }
-fn prepare(split_gt: Bool) -> Tables = Tables { ops: operators(split_gt), word_table: words.prepare() }
+// `split_gt` is the TypeScript package's: `>` is always one token, and a `>`
+// after an operand is the end of one (`Promise<void>` ends a line the way a
+// name does), which a comparison at the end of a line then cannot be.
+type Tables = { ops: Operators, word_table: words.Words, split_gt: Bool }
+fn prepare(split_gt: Bool) -> Tables = Tables { ops: operators(split_gt), word_table: words.prepare(), split_gt: split_gt }
 
 fn scan_prepared(source: String, p: Tables, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = {
   let buffer = bytes.from_string(source)
@@ -355,6 +360,7 @@ fn scan_prepared(source: String, p: Tables, recovering: Bool) -> Result[List[tre
           next_class = if (list.pop(parens) ?? PAREN_PLAIN) == PAREN_HEADER then P_PUNCT else P_OPERAND
         }
         else if op2 == OP_RBRACK then next_class = P_OPERAND
+        else if op2 == OP_GT and p.split_gt and prev == P_OPERAND then next_class = P_OPERAND
         else ()
       } else {
         guard recovering else err(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unexpected character" })

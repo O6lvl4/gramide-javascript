@@ -33,6 +33,10 @@ let W_CASE = 17
 let W_AWAIT = 18
 let W_EXTENDS = 19
 let W_DEFAULT = 20
+// after an operand these continue it across a line break, and nothing else
+// about them matters here
+let W_AS = 21
+let W_SATISFIES = 22
 // a statement may follow: a regex may begin, a `{` is a block, no separator
 let W_ELSE = 30
 let W_DO = 31
@@ -54,7 +58,7 @@ fn spellings() -> List[(String, Int)] = [
   ("yield", W_YIELD), ("debugger", W_DEBUGGER),
   ("typeof", W_TYPEOF), ("instanceof", W_INSTANCEOF), ("in", W_IN), ("of", W_OF), ("new", W_NEW),
   ("delete", W_DELETE), ("void", W_VOID), ("case", W_CASE), ("await", W_AWAIT), ("extends", W_EXTENDS),
-  ("default", W_DEFAULT),
+  ("default", W_DEFAULT), ("as", W_AS), ("satisfies", W_SATISFIES),
   ("else", W_ELSE), ("do", W_DO), ("try", W_TRY), ("finally", W_FINALLY),
   ("if", W_IF), ("for", W_FOR), ("while", W_WHILE), ("with", W_WITH), ("switch", W_SWITCH),
   ("catch", W_CATCH), ("function", W_FUNCTION), ("class", W_CLASS), ("import", W_IMPORT), ("export", W_EXPORT),
@@ -108,7 +112,7 @@ fn classify(w: Words, buffer: Bytes, start: Int, end: Int) -> Int = {
 
 fn restricted(code: Int) -> Bool = code >= W_RETURN and code <= W_DEBUGGER
 // after these an operand follows, so `{` opens an object and `/` a regex
-fn before_operand(code: Int) -> Bool = code >= W_RETURN and code <= W_DEFAULT
+fn before_operand(code: Int) -> Bool = code >= W_RETURN and code <= W_SATISFIES
 // after these a statement or a block follows
 fn before_statement(code: Int) -> Bool = code >= W_ELSE
 // the words whose `(` opens a header, after which `{` is a body and `/` a regex
