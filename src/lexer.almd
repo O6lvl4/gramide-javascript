@@ -360,7 +360,7 @@ fn scan_prepared(source: String, p: Tables, recovering: Bool) -> Result[List[tre
           next_class = if (list.pop(parens) ?? PAREN_PLAIN) == PAREN_HEADER then P_PUNCT else P_OPERAND
         }
         else if op2 == OP_RBRACK then next_class = P_OPERAND
-        else if op2 == OP_GT and p.split_gt and prev == P_OPERAND then next_class = P_OPERAND
+        else if op2 == OP_GT and p.split_gt and (prev == P_OPERAND or prev == P_BLOCK_END) then next_class = P_OPERAND
         else ()
       } else {
         guard recovering else err(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unexpected character" })

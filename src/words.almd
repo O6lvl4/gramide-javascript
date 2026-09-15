@@ -28,7 +28,8 @@ let W_IN = 12
 let W_OF = 13
 let W_NEW = 14
 let W_DELETE = 15
-let W_VOID = 16
+// `void` is not here: as a type it ends a line (`(): Promise<void>`), which
+// is the opposite of what the operator would say
 let W_CASE = 17
 let W_AWAIT = 18
 let W_EXTENDS = 19
@@ -57,7 +58,7 @@ fn spellings() -> List[(String, Int)] = [
   ("return", W_RETURN), ("throw", W_THROW), ("break", W_BREAK), ("continue", W_CONTINUE),
   ("yield", W_YIELD), ("debugger", W_DEBUGGER),
   ("typeof", W_TYPEOF), ("instanceof", W_INSTANCEOF), ("in", W_IN), ("of", W_OF), ("new", W_NEW),
-  ("delete", W_DELETE), ("void", W_VOID), ("case", W_CASE), ("await", W_AWAIT), ("extends", W_EXTENDS),
+  ("delete", W_DELETE), ("case", W_CASE), ("await", W_AWAIT), ("extends", W_EXTENDS),
   ("default", W_DEFAULT), ("as", W_AS), ("satisfies", W_SATISFIES),
   ("else", W_ELSE), ("do", W_DO), ("try", W_TRY), ("finally", W_FINALLY),
   ("if", W_IF), ("for", W_FOR), ("while", W_WHILE), ("with", W_WITH), ("switch", W_SWITCH),
