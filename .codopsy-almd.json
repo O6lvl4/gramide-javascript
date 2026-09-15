@@ -1,0 +1,13 @@
+{
+  "src/common.almd": 1,
+  "src/declarations.almd": 3,
+  "src/expressions.almd": 1,
+  "src/grammar.almd": 3,
+  "src/lexer.almd": 90,
+  "src/literals.almd": 11,
+  "src/mod.almd": 1,
+  "src/statements.almd": 1,
+  "src/symbols.almd": 1,
+  "src/table.almd": 1,
+  "src/words.almd": 7
+}
