@@ -12,16 +12,16 @@ import self.lexer
 import self.symbols
 import self.table
 
-let VERSION = "0.1.0"
+let VERSION = "0.2.0"
 
 // The operator and word tables are packed once here, not once per file.
 fn prepare_lexer() -> package_api.Tokenizer = {
-  let prepared = lexer.prepare(false)
+  let prepared = lexer.prepare(false, true)
   (source, recovering) => lexer.scan_prepared(source, prepared, recovering)
 }
 
 fn definition() -> package_api.Definition = package_api.Definition {
-  id: "javascript", package_name: "gramide-javascript", version: VERSION, extensions: [".js", ".mjs", ".cjs"],
+  id: "javascript", package_name: "gramide-javascript", version: VERSION, extensions: [".js", ".mjs", ".cjs", ".jsx"],
   capabilities: ["check", "tokens", "parse", "outline", "symbols", "symbols-recovered", "tags", "map"],
   lexer: () => prepare_lexer(), grammar: () => table.compiled(), sep: ".", symbols: symbols.symbol_rules()
 }

@@ -24,12 +24,15 @@ and where its correctness is checked.
 
 ## What it reads
 
-`.js`, `.mjs` and `.cjs`, as ECMAScript 2025 plus the syntax already shipping
-in engines: modules with attributes, classes with private names, static
-blocks, accessors and decorators, generators and async iteration, optional
-chaining and logical assignment, `using` declarations, BigInt, numeric
-separators, hashbangs. JSX is not read yet; a `.jsx` file is not this
-package's.
+`.js`, `.mjs`, `.cjs` and `.jsx`, as ECMAScript 2025 plus the syntax already
+shipping in engines: modules with attributes, classes with private names,
+static blocks, accessors and decorators, generators and async iteration,
+optional chaining and logical assignment, `using` declarations, BigInt,
+numeric separators, hashbangs — and JSX, in every file, because the
+TypeScript compiler reads every JavaScript file that way and so does the
+React world. A `<` where an operand may stand, followed by a name or `>`,
+opens an element; inside it the scanner reads tags, attributes, `{ … }` and
+text, and the grammar reads the shape.
 
 The one thing the package deliberately does not do is refuse every file an
 engine refuses. `a + b = c` parses, an `in` inside a `for` initialiser is not
@@ -49,9 +52,13 @@ byte range.
 |---|---:|---:|---|
 | Node `lib/` at `5c5bd227` | 427 | 5.7 MB | all parse; all 11,470 declarations match the reference |
 | TypeScript 5.9.3 `lib/*.js` | 9 | 15.4 MB | all parse; all 21,216 declarations match the reference |
+| MUI `docs/data/{material,joy}/components/**/*.js` at `053c4319` (JSX demos) | 547 | 1.5 MB | all parse; all 1,100 declarations match the reference |
+| React `fixtures/{ssr,flight}` at `ff8f88fc` (JSX in `.js`) | 43 | 0.2 MB | all parse; all 221 declarations match the reference |
 
 ([evidence](docs/evidence/corpus-node-lib.json),
-[evidence](docs/evidence/corpus-typescript-lib-js.json).) A declaration here
+[evidence](docs/evidence/corpus-typescript-lib-js.json),
+[evidence](docs/evidence/corpus-mui-docs-jsx.json),
+[evidence](docs/evidence/corpus-react-fixtures.json).) A declaration here
 is a function or a class, a method named with its class or with the binding
 its object was assigned to (`handlers.onClick`), a class field, and a
 `const`, `let`, `var` or `using` binding at the top of the file — a binding
@@ -75,6 +82,9 @@ reference rejects, and 2,000 generated functions.
   the class of the previous token, what each open `{` and `(` is, and whether
   a line break was seen. A `newline` token in the stream is a statement
   separator and nothing else, so the grammar never mentions a line break.
+  Inside a JSX element the scanner keeps a fourth thing, where it is in the
+  element (a tag, its children, an expression in braces), and reads names,
+  attribute strings and text as such.
 - **`src/grammar.almd`**, composed from `expressions`, `declarations` and
   `statements` — the grammar as a value, in ECMAScript's precedence order.
   An arrow function is found by a balanced lookahead over its parameter

@@ -125,3 +125,10 @@ test "a broken declaration becomes an ERROR node and the rest of the file surviv
   let fine = "function alpha() { return 1 }\n"
   assert_eq(recovered_kinds(fine), top_kinds(fine))
 }
+
+test "JSX parses as an operand wherever one may stand" {
+  assert_eq(top_kinds("function App({ items }) {\n  return (\n    <ul className=\"list\" {...rest}>\n      {items.map((i) => <li key={i}>{i} &amp; more</li>)}\n      <>text</>\n      <svg:path d='m0' />\n    </ul>\n  )\n}\nconst x = cond ? <A.B /> : null\n"),
+    ["function_declaration", "const_declaration"])
+  // a generic arrow is TypeScript's: here the `<` is not JSX and not an operand
+  assert(string.starts_with(list.get(top_kinds("const f = <T,>(x: T) => x\n"), 0) ?? "", "ERROR 1:1"))
+}

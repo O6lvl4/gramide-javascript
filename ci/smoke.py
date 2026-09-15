@@ -11,9 +11,9 @@ def run(*args, code=0):
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
-    for ext in ["js", "mjs", "cjs"]:
+    for ext in ["js", "mjs", "cjs", "jsx"]:
         source = root / ("valid." + ext)
-        source.write_text("export class Box {\n  read() { return /re/.test(this.x) ? 1 : 2 }\n}\nconst f = (a) => a\n")
+        source.write_text("export class Box {\n  read() { return /re/.test(this.x) ? <b>{1}</b> : 2 }\n}\nconst f = (a) => <Box a={a} />\n")
         run("check", source)
         out = run("outline", source)
         assert "Box.read" in out and "function f" in out, out
@@ -26,4 +26,4 @@ with tempfile.TemporaryDirectory() as tmp:
         recovered = run("outline", broken)
         assert "Box.read" in recovered and "Box.also" in recovered and "function f" in recovered, recovered
     assert run("version").splitlines()[0].startswith("gramide_javascript ")
-print("CLI smoke passed: .js .mjs .cjs check, outline, symbols and recovered outline")
+print("CLI smoke passed: .js .mjs .cjs .jsx check, JSX, outline, symbols and recovered outline")

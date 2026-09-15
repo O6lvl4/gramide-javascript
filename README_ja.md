@@ -21,10 +21,13 @@ gramide_javascript map .   --budget 1024 --task "fix the retry"
 
 ## 読めるもの
 
-`.js` `.mjs` `.cjs` を ECMAScript 2025 と、エンジンに既に載っている構文で読む。
+`.js` `.mjs` `.cjs` `.jsx` を ECMAScript 2025 と、エンジンに既に載っている構文で読む。
 属性付きモジュール、private 名・static ブロック・アクセサ・デコレータを持つクラス、
 ジェネレータと非同期反復、オプショナルチェーンと論理代入、`using` 宣言、BigInt、
-数値区切り、シバン。JSX はまだ読まない。`.jsx` はこのパッケージのものではない。
+数値区切り、シバン。そして JSX を、すべてのファイルで。TypeScript コンパイラはどの
+JavaScript ファイルもそう読むし、React の世界もそうだから。オペランドが立てる位置の `<` に
+名前か `>` が続けば要素が始まり、その中でスキャナはタグ・属性・`{ … }`・テキストを読み、
+文法は形を読む。
 
 意図的にやらないのは、エンジンが拒否するファイルをすべて拒否すること。`a + b = c` は
 通り、`for` の初期化式の中の `in` は拒否せず、クラス外の `super` にも気づかない。
@@ -42,9 +45,13 @@ JavaScript バンドルを、このパッケージと TypeScript コンパイラ
 |---|---:|---:|---|
 | Node `lib/` (`5c5bd227`) | 427 | 5.7 MB | 全件パース。11,470 宣言すべてが参照と一致 |
 | TypeScript 5.9.3 `lib/*.js` | 9 | 15.4 MB | 全件パース。21,216 宣言すべてが参照と一致 |
+| MUI `docs/data/{material,joy}/components/**/*.js`(`053c4319`、JSX デモ） | 547 | 1.5 MB | 全件パース。1,100 宣言すべてが参照と一致 |
+| React `fixtures/{ssr,flight}`(`ff8f88fc`、`.js` 内の JSX） | 43 | 0.2 MB | 全件パース。221 宣言すべてが参照と一致 |
 
 ([証拠](docs/evidence/corpus-node-lib.json)、
-[証拠](docs/evidence/corpus-typescript-lib-js.json))。ここでの宣言とは、関数と
+[証拠](docs/evidence/corpus-typescript-lib-js.json)、
+[証拠](docs/evidence/corpus-mui-docs-jsx.json)、
+[証拠](docs/evidence/corpus-react-fixtures.json))。ここでの宣言とは、関数と
 クラス、クラス名または代入先の束縛名を冠したメソッド(`handlers.onClick`)、クラスの
 フィールド、そしてファイル先頭レベルの `const` `let` `var` `using` 束縛。値が関数の
 束縛は関数として扱う。Node `lib/` のバッチ `check` は 8 コアで約 220 MB/s、9.1 MB の

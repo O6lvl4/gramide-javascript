@@ -1,0 +1,22 @@
+{
+  "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+  "node": "v22.23.1",
+  "typescript": "5.9.3",
+  "binary_sha256": "cc019217638e0eda890906682e2473ea369a57461653b6992c9136216812e1f1",
+  "root": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/react/fixtures",
+  "ext": [
+    ".js"
+  ],
+  "excluded": [],
+  "files": 43,
+  "bytes": 185635,
+  "check_seconds": 0.005,
+  "megabytes_per_second": 34.1,
+  "reference_rejected": [],
+  "gramide_rejected": [],
+  "range_mismatch": [],
+  "passed": 43,
+  "symbols": 221,
+  "reference_commit": "ff8f88fcd2fb6e5db70e08c674c04b4314747d65",
+  "input_sha256": "77b6376712d9dce45b582ace20b274cbb1f6bfc1c7f7c5fa96ca0179b1350728"
+}

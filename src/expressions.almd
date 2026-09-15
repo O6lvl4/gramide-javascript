@@ -101,9 +101,30 @@ fn rules() -> List[(String, parser.Rule)] = [
     wrap("group", seq([lit("("), r("expression"), lit(")")])),
     r("array"), r("object"),
     keeps(["this", "super", "true", "false", "null"]),
+    r("jsx"),
     r("extra_primary"),
     r("name"),
   ])),
+
+  // ── JSX ───────────────────────────────────────────────────────────────
+  // The scanner has already decided that a `<` opens an element (it stands
+  // where an operand may and a name or `>` follows), and inside one it emits
+  // tag and attribute names as single identifiers (`svg:path`, `data-x`,
+  // `Foo.Bar`), attribute strings and text runs as strings, and `{` `}`
+  // around expressions. What is left for the grammar is the shape.
+  ("jsx", alt([
+    wrap("jsx_fragment", seq([lit("<"), lit(">"), rep(r("jsx_child")), lit("<"), lit("/"), lit(">")])),
+    wrap("jsx_element", seq([lit("<"), field("name", ident()), r("type_arguments"), rep(r("jsx_attribute")), alt([
+      seq([lit("/"), lit(">")]),
+      seq([lit(">"), rep(r("jsx_child")), lit("<"), lit("/"), ident(), lit(">")]),
+    ])])),
+  ])),
+  ("jsx_attribute", alt([
+    wrap("jsx_spread", seq([lit("{"), lit("..."), r("assignment"), lit("}")])),
+    wrap("jsx_attribute", seq([ident(), opt(seq([lit("="), alt([tok("string"), r("jsx_expression"), r("jsx")])]))])),
+  ])),
+  ("jsx_expression", wrap("jsx_expression", seq([lit("{"), opt(seq([opt(lit("...")), r("assignment")])), lit("}")]))),
+  ("jsx_child", alt([tok("string"), r("jsx"), r("jsx_expression")])),
   ("template_literal", wrap("template", seq([
     tok("tstring_start"), opt(seq([r("expression"), rep(seq([tok("tstring_middle"), r("expression")]))])), tok("tstring_end")
   ]))),

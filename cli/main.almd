@@ -46,7 +46,7 @@ effect fn parallel(cmd: String, paths: List[String]) -> List[cli.Chunk] = {
 // not lex, and a count. What the lexer gate runs before the grammar exists
 // for a file.
 effect fn lex_check(paths: List[String]) -> Unit = {
-  let tables = lexer.prepare(false)
+  let tables = lexer.prepare(false, true)
   var failed = 0
   for path in paths {
     match fs.read_text(path) {

@@ -1,0 +1,22 @@
+{
+  "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+  "node": "v22.23.1",
+  "typescript": "5.9.3",
+  "binary_sha256": "cc019217638e0eda890906682e2473ea369a57461653b6992c9136216812e1f1",
+  "root": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/material-ui/docs/data",
+  "ext": [
+    ".js"
+  ],
+  "excluded": [],
+  "files": 547,
+  "bytes": 1537798,
+  "check_seconds": 0.02,
+  "megabytes_per_second": 76.9,
+  "reference_rejected": [],
+  "gramide_rejected": [],
+  "range_mismatch": [],
+  "passed": 547,
+  "symbols": 1100,
+  "reference_commit": "053c43192cd9d9a8c3af97bdf2dedfe18ce5cc46",
+  "input_sha256": "55bb437cfb95f871a3b8004d24b5681bd451bc2700ec02318170bddedb56c813"
+}
