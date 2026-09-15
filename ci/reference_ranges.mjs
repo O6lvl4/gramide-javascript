@@ -66,6 +66,19 @@ function symbolsOf(sf, text) {
   const table = byteTable(text);
   const out = [];
   const lineOf = (pos) => sf.getLineAndCharacterOfPosition(pos).line + 1;
+  // where a declaration's last token ends: a trailing comment is the next
+  // token's leading trivia to the compiler and no token at all to gramide,
+  // and a closing `;` or `,` belongs to the statement or the list
+  function tokenEnd(node) {
+    const kids = node.getChildren(sf);
+    if (kids.length === 0) return node.getEnd();
+    for (let i = kids.length - 1; i >= 0; i--) {
+      const k = kids[i];
+      if (k.kind === ts.SyntaxKind.SemicolonToken || k.kind === ts.SyntaxKind.CommaToken) continue;
+      return tokenEnd(k);
+    }
+    return node.getEnd();
+  }
   const push = (kind, name, owner, startPos, endPos) => {
     // a trailing `;` belongs to the statement, not to the declaration
     let end = endPos;
@@ -74,15 +87,15 @@ function symbolsOf(sf, text) {
   };
   const isFunctionInit = (init) => init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init));
   function visit(node, top) {
-    if (ts.isFunctionDeclaration(node) && node.name) push("function", node.name.text, "", node.getStart(sf), node.getEnd());
-    else if (ts.isClassDeclaration(node) && node.name) push("class", node.name.text, "", node.getStart(sf), node.getEnd());
+    if (ts.isFunctionDeclaration(node) && node.name) push("function", node.name.text, "", node.getStart(sf), tokenEnd(node));
+    else if (ts.isClassDeclaration(node) && node.name) push("class", node.name.text, "", node.getStart(sf), tokenEnd(node));
     else if (ts.isMethodDeclaration(node) || ts.isAccessor(node) || ts.isConstructorDeclaration(node)) {
       const own = ownerAbove(node);
       const name = ts.isConstructorDeclaration(node) ? "constructor" : nameText(node.name);
       if (name && !(ts.isMethodDeclaration(node) && !ts.isClassLike(node.parent) && !ts.isObjectLiteralExpression(node.parent)))
-        push("method", own ? own + "." + name : name, own, node.getStart(sf), node.getEnd());
+        push("method", own ? own + "." + name : name, own, node.getStart(sf), tokenEnd(node));
     }
-    else if (ts.isPropertyDeclaration(node) && nameText(node.name)) push("field", nameText(node.name), "", node.getStart(sf), node.getEnd());
+    else if (ts.isPropertyDeclaration(node) && nameText(node.name)) push("field", nameText(node.name), "", node.getStart(sf), tokenEnd(node));
     else if (ts.isVariableStatement(node) && top) {
       const flags = ts.getCombinedNodeFlags(node.declarationList);
       const word = flags & ts.NodeFlags.Const ? "const" : flags & ts.NodeFlags.Let ? "let" : flags & ts.NodeFlags.Using ? "using" : flags & ts.NodeFlags.AwaitUsing ? "using" : "var";
@@ -90,7 +103,7 @@ function symbolsOf(sf, text) {
       for (const d of node.declarationList.declarations) {
         if (!ts.isIdentifier(d.name)) continue;
         const kind = isFunctionInit(d.initializer) ? "function" : word;
-        push(kind, d.name.text, "", stmtStart, d.getEnd());
+        push(kind, d.name.text, "", stmtStart, tokenEnd(d));
       }
     }
     const deeper = top && (ts.isExportDeclaration(node) || ts.isExportAssignment(node) || ts.isModuleBlock(node) || node === sf);
