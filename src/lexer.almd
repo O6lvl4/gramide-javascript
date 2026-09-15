@@ -148,6 +148,27 @@ fn word_continues_operand(code: Int) -> Bool =
 fn word_continues_block(code: Int, after_do: Bool) -> Bool =
   code == words.W_ELSE or code == words.W_CATCH or code == words.W_FINALLY or (code == words.W_WHILE and after_do)
 
+// For TypeScript: does the bracket at `at` open a signature rather than an
+// index or a call? `[key: string]`, `[K in T]`, `(): void`, `(x: T)`,
+// `(...rest)`, `(this: T)`. In an object type a line break before one of
+// these separates members, where JavaScript would read an index or a call.
+fn opens_signature(buffer: Bytes, at: Int, close: Int) -> Bool = {
+  var i = at + 1
+  while is_space(bytes.get_or(buffer, i, -1)) { i = i + 1 }
+  let b = bytes.get_or(buffer, i, -1)
+  if b == close then true
+  else if b == 46 and bytes.get_or(buffer, i + 1, -1) == 46 and bytes.get_or(buffer, i + 2, -1) == 46 then true
+  else if not ident_start(b) then false
+  else {
+    let word_end = scan_word(buffer, i)
+    var j = word_end
+    while is_space(bytes.get_or(buffer, j, -1)) { j = j + 1 }
+    let c = bytes.get_or(buffer, j, -1)
+    c == 58 or (c == 63 and bytes.get_or(buffer, j + 1, -1) == 58)
+      or (c == 105 and bytes.get_or(buffer, j + 1, -1) == 110 and is_space(bytes.get_or(buffer, j + 2, -1)))
+  }
+}
+
 fn make(kind: Int, start: Int, end: Int, line: Int, line_start: Int) -> tree.Token =
   tree.Token { kind: kind, start: start, end: end, line: line, col: start - line_start + 1 }
 fn newline_end(source: Bytes, at: Int) -> Int = at + (if bytes.get_or(source, at, -1) == 13 and bytes.get_or(source, at + 1, -1) == 10 then 2 else 1)
@@ -397,6 +418,8 @@ fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List
           else if prev == P_RESTRICTED then true
           else if prev == P_OPERAND then
             (if is_punct then punct_starts_statement(this_op)
+               or (p.split_gt and this_op == OP_LBRACK and opens_signature(buffer, start, 93))
+               or (p.split_gt and this_op == OP_LPAREN and opens_signature(buffer, start, 41))
              else if is_word then not word_continues_operand(this_word)
              else kind != tree.T_TSTRING_START)
           else if prev == P_BLOCK_END then
