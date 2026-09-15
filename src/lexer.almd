@@ -311,305 +311,293 @@ fn separates(prev: Int, kind: Int, op: Int, word: Int, after_do: Bool, split_gt:
 type ScanTables = { ops: Operators, word_table: words.Words, split_gt: Bool, jsx: Bool }
 fn prepare(split_gt: Bool, jsx: Bool) -> ScanTables = ScanTables { ops: operators(split_gt), word_table: words.prepare(), split_gt: split_gt, jsx: jsx }
 
+// What the scanner carries from one token to the next: the stacks, the class
+// of the previous token, and the line break it has seen but not yet decided.
+type State = {
+  tokens: List[tree.Token],
+  braces: List[Int], parens: List[Int], jsx: List[Int],
+  tag_named: Bool,        // the open tag has its name: a `/` now is self-closing
+  type_depth: Int,        // open `<` inside a tag's type arguments
+  prev: Int, prev_op: Int, prev_word: Int, prev_was_word: Bool,
+  since_function: Int,    // tokens since a `function` word, for `function name (`
+  after_do: Bool,         // the previous token closed the body of a `do`
+  do_pending: Bool,       // a `do` whose body is not a block: its `while` is still to come
+  decorated: Bool,        // a `@` opened a decorator: the next line break joins
+  nl_seen: Bool, nl_at: Int, nl_line: Int, nl_line_start: Int,
+  i: Int, line: Int, line_start: Int,
+}
+fn fresh() -> State = State {
+  tokens: [], braces: [], parens: [], jsx: [], tag_named: false, type_depth: 0,
+  prev: P_NONE, prev_op: 0, prev_word: words.W_PLAIN, prev_was_word: false, since_function: 99,
+  after_do: false, do_pending: false, decorated: false,
+  nl_seen: false, nl_at: 0, nl_line: 1, nl_line_start: 0, i: 0, line: 1, line_start: 0,
+}
+// What one token's scan answers; `s.i` has moved past it. A `failure` is a
+// token that could not be read whole: `recover_end` is where reading resumes.
+type Step = { kind: Int, next_class: Int, op: Int, word: Int, failure: Option[lex.LexError], recover_end: Int, template_closed: Bool }
+fn nothing() -> Step = Step { kind: tree.T_NONE, next_class: P_NONE, op: 0, word: words.W_PLAIN, failure: none, recover_end: -1, template_closed: false }
+fn punct(op: Int) -> Step = Step { ...nothing(), kind: tree.T_PUNCT, next_class: P_PUNCT, op: op }
+fn operand(kind: Int) -> Step = Step { ...nothing(), kind: kind, next_class: P_OPERAND }
+fn failed(kind: Int, e: lex.LexError, recover_end: Int) -> Step = Step { ...nothing(), kind: kind, failure: some(e), recover_end: recover_end }
+fn error_at(s: State, start: Int, message: String) -> lex.LexError = lex.LexError { line: s.line, col: start - s.line_start + 1, message: message }
+
+fn note_newline(mut s: State, at: Int) -> Unit =
+  if not s.nl_seen then { s.nl_seen = true; s.nl_at = at; s.nl_line = s.line; s.nl_line_start = s.line_start } else ()
+
+// inside a tag: names, `=`, strings, `{`, `/`, `>`
+fn tag_step(buffer: Bytes, n: Int, b: Int, start: Int, jmode: Int, p: ScanTables, mut s: State) -> Step =
+  if b == 62 then {
+    s.i = s.i + 1
+    let _ = list.pop(s.jsx)
+    if jmode == J_TAG then list.push(s.jsx, J_CHILDREN)
+    else if jmode == J_TAG_CLOSING then { let _ = list.pop(s.jsx) }
+    else ()
+    Step { ...punct(OP_GT), next_class: if list.is_empty(s.jsx) then P_OPERAND else P_PUNCT }
+  }
+  else if b == 47 then {
+    s.i = s.i + 1
+    let _ = list.pop(s.jsx)
+    list.push(s.jsx, if s.tag_named then J_TAG_SELF else J_TAG_CLOSING)
+    punct(pack("/"))
+  }
+  else if b == 123 then { s.i = s.i + 1; list.push(s.jsx, J_EXPR); list.push(s.braces, B_JSX); punct(OP_LBRACE) }
+  else if b == 61 then { s.i = s.i + 1; punct(pack("=")) }
+  else if b == 60 and s.tag_named and p.split_gt and jmode == J_TAG then { s.i = s.i + 1; list.push(s.jsx, J_TYPE); s.type_depth = 1; punct(OP_LT) }
+  else if b == 34 or b == 39 then {
+    let end = scan_jsx_string(buffer, s.i)
+    if end < 0 then failed(tree.T_STRING, error_at(s, start, "unterminated JSX attribute string"), n)
+    else { s.i = end; Step { ...punct(0), kind: tree.T_STRING } }
+  }
+  else if ident_start(b) and b != 92 then { s.i = scan_jsx_name(buffer, s.i); s.tag_named = true; Step { ...punct(0), kind: tree.T_IDENTIFIER } }
+  else failed(tree.T_PUNCT, error_at(s, start, "unexpected character in a JSX tag"), s.i + 1)
+
+// between tags: `<` opens a nested or the closing tag, `{` an expression
+fn children_step(b: Int, mut s: State) -> Step = {
+  s.i = s.i + 1
+  if b == 60 then { list.push(s.jsx, J_TAG); s.tag_named = false; punct(OP_LT) }
+  else { list.push(s.jsx, J_EXPR); list.push(s.braces, B_JSX); punct(OP_LBRACE) }
+}
+
+// `/* … */`: the line breaks inside count, the first as the one seen; false
+// if the comment never closes, with `s.i` at the end of the file
+fn block_comment(buffer: Bytes, n: Int, mut s: State) -> Bool = {
+  var j = s.i + 2
+  var closed = false
+  while not closed and j < n {
+    let c = bytes.get_or(buffer, j, -1)
+    if c == 42 and bytes.get_or(buffer, j + 1, -1) == 47 then closed = true
+    else {
+      if literals.line_end(c) or literals.unicode_line_end(buffer, j) then note_newline(s, j) else ()
+      j = j + 1
+    }
+  }
+  s.i = if closed then j + 2 else n
+  closed
+}
+fn line_comment(buffer: Bytes, n: Int, mut s: State) -> Unit =
+  while s.i < n and not literals.line_end(bytes.get_or(buffer, s.i, -1)) and not literals.unicode_line_end(buffer, s.i) { s.i = s.i + 1 }
+
+fn literal_step(buffer: Bytes, n: Int, b: Int, start: Int, p: ScanTables, mut s: State) -> Step = {
+  let col = start - s.line_start + 1
+  if b == 34 or b == 39 then match literals.scan_string(buffer, start, s.line, col) {
+    ok(end) => { s.i = end; operand(tree.T_STRING) },
+    err(e) => failed(tree.T_STRING, e, literals.string_recovery_end(buffer, start)),
+  }
+  else if b == 96 then match literals.scan_template_segment(buffer, start, s.line, col) {
+    // a template's first segment: whole, or up to its first `$` `{`
+    ok(seg) => {
+      s.i = seg.end
+      if seg.kind == literals.SEG_OPEN then { list.push(s.braces, B_TEMPLATE); Step { ...punct(0), kind: tree.T_TSTRING_START } }
+      else Step { ...operand(tree.T_TSTRING_START), template_closed: true }
+    },
+    err(e) => failed(tree.T_TSTRING_START, e, n),
+  }
+  else if b == 47 then match literals.scan_regex(buffer, start, s.line, col) {
+    // a regular expression: what a `/` is unless an operand precedes it
+    ok(end) => { s.i = end; operand(tree.T_STRING) },
+    err(e) => failed(tree.T_STRING, e, literals.string_recovery_end(buffer, start)),
+  }
+  else match literals.scan_number(buffer, start, s.line, col) {
+    ok(end) => { s.i = end; operand(tree.T_NUMBER) },
+    err(e) => failed(tree.T_NUMBER, e, scan_word(buffer, literals.digits_of(buffer, start, 16))),
+  }
+}
+
+fn word_step(buffer: Bytes, start: Int, p: ScanTables, mut s: State) -> Step = {
+  s.i = scan_word(buffer, start)
+  if s.i == start then failed(tree.T_IDENTIFIER, error_at(s, start, "unexpected character"), start + 1)
+  else {
+    let word = words.classify(p.word_table, buffer, start, s.i)
+    Step { ...nothing(), kind: tree.T_IDENTIFIER, next_class: word_class(word), word: word }
+  }
+}
+
+// an operator: the openers and closers keep the brace and paren stacks, and a
+// `}` that closes a template substitution reads the next segment
+fn operator_step(buffer: Bytes, n: Int, b: Int, start: Int, p: ScanTables, mut s: State) -> Step = {
+  let op = operator_at(p.ops, buffer, start, b)
+  // `?.5` is `?` then `.5`
+  let op2 = if op == OP_QDOT and literals.digit(bytes.get_or(buffer, start + 2, -1)) then pack("?") else op
+  guard op2 != 0 else failed(tree.T_ERROR, error_at(s, start, "unexpected character"), start + (if b >= 240 then 4 else if b >= 224 then 3 else if b >= 192 then 2 else 1))
+  s.i = start + width_of(op2)
+  if op2 == OP_LBRACE then {
+    let tag = brace_tag(s.prev, s.prev_op, s.prev_word, list.last(s.braces) ?? B_BLOCK)
+    list.push(s.braces, tag)
+    if tag != B_OBJECT then s.decorated = false else ()
+    punct(op2)
+  }
+  else if op2 == OP_RBRACE then {
+    let tag = list.pop(s.braces) ?? B_BLOCK
+    if tag == B_TEMPLATE then match literals.scan_template_segment(buffer, start, s.line, start - s.line_start + 1) {
+      // the substitution is over: the next segment of the template
+      ok(seg) => {
+        s.i = seg.end
+        if seg.kind == literals.SEG_OPEN then { list.push(s.braces, B_TEMPLATE); Step { ...punct(op2), kind: tree.T_TSTRING_MIDDLE } }
+        else Step { ...punct(op2), kind: tree.T_TSTRING_END, next_class: P_OPERAND }
+      },
+      err(e) => failed(tree.T_PUNCT, e, n),
+    }
+    else if tag == B_JSX then { let _ = list.pop(s.jsx); punct(op2) }
+    else if tag == B_OBJECT then Step { ...punct(op2), next_class: P_OPERAND }
+    else { s.after_do = tag == B_DO; Step { ...punct(op2), next_class: P_BLOCK_END } }
+  }
+  else if op2 == OP_LPAREN then {
+    let header = (words.opens_header(s.prev_word) and s.prev_was_word and not (s.prev_word == words.W_WHILE and s.after_do))
+      or s.since_function <= 2
+    list.push(s.parens, if header then PAREN_HEADER else PAREN_PLAIN)
+    punct(op2)
+  }
+  else if op2 == OP_RPAREN then Step { ...punct(op2), next_class: if (list.pop(s.parens) ?? PAREN_PLAIN) == PAREN_HEADER then P_PUNCT else P_OPERAND }
+  else if op2 == OP_RBRACK then Step { ...punct(op2), next_class: P_OPERAND }
+  else if op2 == OP_GT and p.split_gt and (s.prev == P_OPERAND or s.prev == P_BLOCK_END) then Step { ...punct(op2), next_class: P_OPERAND }
+  else punct(op2)
+}
+
+// a token outside any JSX tag or children
+fn token_step(buffer: Bytes, n: Int, b: Int, start: Int, p: ScanTables, mut s: State) -> Step = {
+  let after = bytes.get_or(buffer, start + 1, -1)
+  if b == 34 or b == 39 or b == 96 then literal_step(buffer, n, b, start, p, s)
+  else if b == 47 and s.prev != P_OPERAND and after != 42 and after != 47 then literal_step(buffer, n, b, start, p, s)
+  else if p.jsx and b == 60 and s.prev != P_OPERAND and not (s.prev_was_word and (s.prev_word == words.W_FUNCTION or s.prev_word == words.W_CLASS)) and jsx_starts(buffer, start) then {
+    // an element: `<` where an operand may stand, followed by a name or `>`
+    s.i = start + 1
+    list.push(s.jsx, J_TAG)
+    s.tag_named = false
+    punct(OP_LT)
+  }
+  else if literals.starts_number(buffer, start) then literal_step(buffer, n, 48, start, p, s)
+  else if ident_start(b) or (b == 35 and ident_start(after)) then word_step(buffer, start, p, s)
+  else operator_step(buffer, n, b, start, p, s)
+}
+
+// count the lines a token or comment spanned, before anything is emitted at its end
+fn count_lines(buffer: Bytes, start: Int, mut s: State) -> Unit = {
+  var at = start
+  while at < s.i {
+    let c = bytes.get_or(buffer, at, -1)
+    if literals.line_end(c) then { at = newline_end(buffer, at); s.line = s.line + 1; s.line_start = at }
+    else if literals.unicode_line_end(buffer, at) then { at = at + 3; s.line = s.line + 1; s.line_start = at }
+    else at = at + 1
+  }
+}
+
+// emit the token, with the separator before it if its line break was one,
+// and carry what the next token needs to know about this one
+fn finish(buffer: Bytes, step: Step, start: Int, first_line: Int, first_line_start: Int, jmode: Int, in_tag: Bool, p: ScanTables, mut s: State) -> Unit = {
+  let kind = step.kind
+  let is_punct = kind == tree.T_PUNCT
+  let is_word = kind == tree.T_IDENTIFIER
+  // the line break before this token: a separator, or nothing; inside an
+  // element a line break is text or nothing
+  if s.nl_seen then {
+    let separate = if s.decorated or jmode == J_CHILDREN or in_tag then false
+      else separates(s.prev, kind, step.op, step.word, s.after_do, p.split_gt, buffer, start)
+    if s.decorated and not (is_punct and step.op == OP_AT) then s.decorated = false else ()
+    if separate then list.push(s.tokens, make(tree.T_NEWLINE, s.nl_at, newline_end(buffer, s.nl_at), s.nl_line, s.nl_line_start)) else ()
+    s.nl_seen = false
+  } else ()
+  list.push(s.tokens, make(kind, start, s.i, first_line, first_line_start))
+  // the type arguments of a tag: back to the tag at the `>` that closes them
+  if jmode == J_TYPE and is_punct then {
+    if step.op == OP_LT then s.type_depth = s.type_depth + 1
+    else if step.op == OP_GT then { s.type_depth = s.type_depth - 1; if s.type_depth == 0 then { let _ = list.pop(s.jsx) } else () }
+    else ()
+  } else ()
+  // a template with no substitution still ends: a zero-width end marker
+  if step.template_closed then list.push(s.tokens, make(tree.T_TSTRING_END, s.i, s.i, s.line, s.line_start)) else ()
+  // a decorator: the line break after it joins, decided above for the
+  // `@` itself and here for what follows it
+  if is_punct and step.op == OP_AT then s.decorated = true else ()
+  if is_word and step.word == words.W_CLASS then s.decorated = false else ()
+  // the `while` of a `do`: after its body's `}`, or after a body with no braces
+  if is_word and step.word == words.W_DO then s.do_pending = true
+  else if is_punct and step.op == OP_LBRACE and s.prev == P_WORD_STATEMENT and s.prev_word == words.W_DO then s.do_pending = false
+  else if is_word and step.word == words.W_WHILE and s.do_pending then { s.do_pending = false; s.after_do = true }
+  else ()
+  s.prev = step.next_class
+  s.prev_op = if is_punct then step.op else 0
+  // `for await (` is still the header of a `for`
+  let keeps_for = step.word == words.W_AWAIT and s.prev_was_word and s.prev_word == words.W_FOR
+  if is_word and not keeps_for then s.prev_word = step.word else ()
+  s.prev_was_word = is_word
+  s.since_function = if is_word and step.word == words.W_FUNCTION then 0
+    else if s.since_function < 99 and (is_word or (is_punct and step.op == OP_STAR)) then s.since_function + 1
+    else 99
+  if not (is_punct and step.op == OP_RBRACE) and not (is_word and step.word == words.W_WHILE) then s.after_do = false else ()
+}
+
 fn scan_prepared(source: String, p: ScanTables, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = {
   let buffer = bytes.from_string(source)
   let n = bytes.len(buffer)
-  var tokens: List[tree.Token] = []
-  var braces: List[Int] = []
-  var parens: List[Int] = []
-  var jsx: List[Int] = []
-  var tag_named = false     // the open tag has its name: a `/` now is self-closing
-  var type_depth = 0        // open `<` inside a tag's type arguments
-  var prev = P_NONE
-  var prev_op = 0           // the packed operator of the previous token, if it was one
-  var prev_word = words.W_PLAIN
-  var prev_was_word = false
-  var since_function = 99   // tokens since a `function` word, for `function name (`
-  var after_do = false      // the previous token closed the body of a `do`
-  var do_pending = false    // a `do` whose body is not a block: its `while` is still to come
-  var decorated = false     // a `@` opened a decorator: the next line break joins
-  var nl_seen = false
-  var nl_at = 0
-  var nl_line = 1
-  var nl_line_start = 0
-  var i = 0
-  var line = 1
-  var line_start = 0
+  var s = fresh()
   // a shebang line is not code
-  if bytes.get_or(buffer, 0, -1) == 35 and bytes.get_or(buffer, 1, -1) == 33 then {
-    while i < n and not literals.line_end(bytes.get_or(buffer, i, -1)) { i = i + 1 }
-  } else ()
-  while i < n {
-    let b = bytes.get_or(buffer, i, -1)
-    let start = i
-    let first_line = line
-    let first_line_start = line_start
-    let jmode = list.last(jsx) ?? 0
+  if bytes.get_or(buffer, 0, -1) == 35 and bytes.get_or(buffer, 1, -1) == 33 then line_comment(buffer, n, s) else ()
+  while s.i < n {
+    let b = bytes.get_or(buffer, s.i, -1)
+    let start = s.i
+    let first_line = s.line
+    let first_line_start = s.line_start
+    let jmode = list.last(s.jsx) ?? 0
     let in_tag = jmode == J_TAG or jmode == J_TAG_CLOSING or jmode == J_TAG_SELF
-    var kind = tree.T_NONE
-    var next_class = P_NONE
-    var this_op = 0
-    var this_word = words.W_PLAIN
-    var failure: Option[lex.LexError] = none
-    var recover_end = -1
-    var template_closed = false
-    let uspace = if b >= 128 then unicode_space(buffer, i) else 0
+    let after = bytes.get_or(buffer, start + 1, -1)
+    let uspace = if b >= 128 then unicode_space(buffer, start) else 0
+    var step = nothing()
     if jmode == J_CHILDREN and b != 60 and b != 123 then {
       // text between tags, whitespace and all, up to the next tag or brace
-      kind = tree.T_STRING
-      next_class = P_PUNCT
-      i = scan_jsx_text(buffer, i)
+      s.i = scan_jsx_text(buffer, start)
+      step = Step { ...punct(0), kind: tree.T_STRING }
     }
-    else if is_space(b) then i = i + 1
-    else if uspace > 0 then i = i + uspace
-    else if literals.line_end(b) then {
-      if not nl_seen then { nl_seen = true; nl_at = i; nl_line = line; nl_line_start = line_start } else ()
-      i = newline_end(buffer, i)
+    else if is_space(b) then s.i = start + 1
+    else if uspace > 0 then s.i = start + uspace
+    else if literals.line_end(b) then { note_newline(s, start); s.i = newline_end(buffer, start) }
+    else if literals.unicode_line_end(buffer, start) then { note_newline(s, start); s.i = start + 3 }
+    else if b == 47 and after == 47 and (in_tag or jmode != J_CHILDREN) then line_comment(buffer, n, s)
+    else if b == 47 and after == 42 and (in_tag or jmode != J_CHILDREN) then {
+      // a comment between attributes is skipped like any other
+      if not block_comment(buffer, n, s) then {
+        guard recovering else err(error_at(s, start, "unterminated block comment"))
+        step = Step { ...nothing(), kind: tree.T_ERROR }
+      } else ()
     }
-    else if literals.unicode_line_end(buffer, i) then {
-      if not nl_seen then { nl_seen = true; nl_at = i; nl_line = line; nl_line_start = line_start } else ()
-      i = i + 3
-    }
-    else if in_tag and b == 47 and (bytes.get_or(buffer, i + 1, -1) == 47 or bytes.get_or(buffer, i + 1, -1) == 42) then {
-      // a comment between attributes: skipped like any other, lines counted below
-      if bytes.get_or(buffer, i + 1, -1) == 47 then {
-        while i < n and not literals.line_end(bytes.get_or(buffer, i, -1)) and not literals.unicode_line_end(buffer, i) { i = i + 1 }
-      } else {
-        var j = i + 2
-        while j < n and not (bytes.get_or(buffer, j, -1) == 42 and bytes.get_or(buffer, j + 1, -1) == 47) { j = j + 1 }
-        i = if j < n then j + 2 else n
-      }
-    }
-    else if in_tag then {
-      // inside a tag: names, `=`, strings, `{`, `/`, `>`
-      kind = tree.T_PUNCT
-      next_class = P_PUNCT
-      if b == 62 then {
-        this_op = OP_GT
-        i = i + 1
-        let _ = list.pop(jsx)
-        if jmode == J_TAG then list.push(jsx, J_CHILDREN)
-        else if jmode == J_TAG_CLOSING then { let _ = list.pop(jsx) }
-        else ()
-        if list.is_empty(jsx) then next_class = P_OPERAND else ()
-      }
-      else if b == 47 then {
-        this_op = pack("/")
-        i = i + 1
-        let _ = list.pop(jsx)
-        list.push(jsx, if tag_named then J_TAG_SELF else J_TAG_CLOSING)
-      }
-      else if b == 123 then { this_op = OP_LBRACE; i = i + 1; list.push(jsx, J_EXPR); list.push(braces, B_JSX) }
-      else if b == 61 then { this_op = pack("="); i = i + 1 }
-      else if b == 60 and tag_named and p.split_gt and jmode == J_TAG then { this_op = pack("<"); i = i + 1; list.push(jsx, J_TYPE); type_depth = 1 }
-      else if b == 34 or b == 39 then {
-        kind = tree.T_STRING
-        let end = scan_jsx_string(buffer, i)
-        if end < 0 then { failure = some(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unterminated JSX attribute string" }); recover_end = n }
-        else i = end
-      }
-      else if ident_start(b) and b != 92 then { kind = tree.T_IDENTIFIER; i = scan_jsx_name(buffer, i); tag_named = true }
-      else { failure = some(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unexpected character in a JSX tag" }); recover_end = i + 1 }
-    }
-    else if jmode == J_CHILDREN then {
-      // `<` opens a nested or the closing tag, `{` an expression
-      kind = tree.T_PUNCT
-      next_class = P_PUNCT
-      if b == 60 then { this_op = pack("<"); list.push(jsx, J_TAG); tag_named = false }
-      else { this_op = OP_LBRACE; list.push(jsx, J_EXPR); list.push(braces, B_JSX) }
-      i = i + 1
-    }
-    else if b == 47 and bytes.get_or(buffer, i + 1, -1) == 47 then {
-      while i < n and not literals.line_end(bytes.get_or(buffer, i, -1)) and not literals.unicode_line_end(buffer, i) { i = i + 1 }
-    }
-    else if b == 47 and bytes.get_or(buffer, i + 1, -1) == 42 then {
-      var j = i + 2
-      var closed = false
-      while not closed and j < n {
-        let c = bytes.get_or(buffer, j, -1)
-        if c == 42 and bytes.get_or(buffer, j + 1, -1) == 47 then closed = true
-        else {
-          if literals.line_end(c) or literals.unicode_line_end(buffer, j) then {
-            if not nl_seen then { nl_seen = true; nl_at = j; nl_line = line; nl_line_start = line_start } else ()
-          } else ()
-          j = j + 1
-        }
-      }
-      if closed then i = j + 2
-      else {
-        guard recovering else err(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unterminated block comment" })
-        kind = tree.T_ERROR
-        i = n
-      }
-    }
-    else if b == 34 or b == 39 then {
-      kind = tree.T_STRING
-      next_class = P_OPERAND
-      match literals.scan_string(buffer, i, line, i - line_start + 1) {
-        ok(end) => { i = end },
-        err(e) => { failure = some(e); recover_end = literals.string_recovery_end(buffer, i) },
-      }
-    }
-    else if b == 96 then {
-      // a template's first segment: whole, or up to its first `$` `{`
-      match literals.scan_template_segment(buffer, i, line, i - line_start + 1) {
-        ok(seg) => {
-          kind = tree.T_TSTRING_START
-          i = seg.end
-          if seg.kind == literals.SEG_OPEN then { list.push(braces, B_TEMPLATE); next_class = P_PUNCT }
-          else { next_class = P_OPERAND; template_closed = true }
-        },
-        err(e) => { failure = some(e); recover_end = n },
-      }
-    }
-    else if b == 47 and prev != P_OPERAND and bytes.get_or(buffer, i + 1, -1) != 42 and bytes.get_or(buffer, i + 1, -1) != 47 then {
-      // a regular expression: what a `/` is unless an operand precedes it
-      kind = tree.T_STRING
-      next_class = P_OPERAND
-      match literals.scan_regex(buffer, i, line, i - line_start + 1) {
-        ok(end) => { i = end },
-        err(e) => { failure = some(e); recover_end = literals.string_recovery_end(buffer, i) },
-      }
-    }
-    else if p.jsx and b == 60 and prev != P_OPERAND and not (prev_was_word and (prev_word == words.W_FUNCTION or prev_word == words.W_CLASS)) and jsx_starts(buffer, i) then {
-      // an element: `<` where an operand may stand, followed by a name or `>`
-      kind = tree.T_PUNCT
-      this_op = pack("<")
-      next_class = P_PUNCT
-      i = i + 1
-      list.push(jsx, J_TAG)
-      tag_named = false
-    }
-    else if literals.starts_number(buffer, i) then {
-      kind = tree.T_NUMBER
-      next_class = P_OPERAND
-      match literals.scan_number(buffer, i, line, i - line_start + 1) {
-        ok(end) => { i = end },
-        err(e) => { failure = some(e); recover_end = scan_word(buffer, literals.digits_of(buffer, i, 16)) },
-      }
-    }
-    else if ident_start(b) or (b == 35 and ident_start(bytes.get_or(buffer, i + 1, -1))) then {
-      kind = tree.T_IDENTIFIER
-      i = scan_word(buffer, i)
-      if i == start then failure = some(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unexpected character" })
-      else {
-        this_word = words.classify(p.word_table, buffer, start, i)
-        next_class = word_class(this_word)
-      }
-    }
-    else {
-      let op = operator_at(p.ops, buffer, i, b)
-      // `?.5` is `?` then `.5`
-      let op2 = if op == OP_QDOT and literals.digit(bytes.get_or(buffer, i + 2, -1)) then pack("?") else op
-      if op2 != 0 then {
-        kind = tree.T_PUNCT
-        this_op = op2
-        i = i + width_of(op2)
-        next_class = P_PUNCT
-        if op2 == OP_LBRACE then {
-          let tag = brace_tag(prev, prev_op, prev_word, list.last(braces) ?? B_BLOCK)
-          list.push(braces, tag)
-          if tag != B_OBJECT then decorated = false else ()
-        }
-        else if op2 == OP_RBRACE then {
-          let tag = list.pop(braces) ?? B_BLOCK
-          if tag == B_TEMPLATE then {
-            // the substitution is over: the next segment of the template
-            match literals.scan_template_segment(buffer, start, line, start - line_start + 1) {
-              ok(seg) => {
-                i = seg.end
-                if seg.kind == literals.SEG_OPEN then { kind = tree.T_TSTRING_MIDDLE; list.push(braces, B_TEMPLATE); next_class = P_PUNCT }
-                else { kind = tree.T_TSTRING_END; next_class = P_OPERAND }
-              },
-              err(e) => { failure = some(e); recover_end = n },
-            }
-          }
-          else if tag == B_JSX then { let _ = list.pop(jsx) }
-          else if tag == B_OBJECT then next_class = P_OPERAND
-          else { next_class = P_BLOCK_END; after_do = tag == B_DO }
-        }
-        else if op2 == OP_LPAREN then {
-          let header = (words.opens_header(prev_word) and prev_was_word and not (prev_word == words.W_WHILE and after_do))
-            or since_function <= 2
-          list.push(parens, if header then PAREN_HEADER else PAREN_PLAIN)
-        }
-        else if op2 == OP_RPAREN then {
-          next_class = if (list.pop(parens) ?? PAREN_PLAIN) == PAREN_HEADER then P_PUNCT else P_OPERAND
-        }
-        else if op2 == OP_RBRACK then next_class = P_OPERAND
-        else if op2 == OP_GT and p.split_gt and (prev == P_OPERAND or prev == P_BLOCK_END) then next_class = P_OPERAND
-        else ()
-      } else {
-        guard recovering else err(lex.LexError { line: first_line, col: start - first_line_start + 1, message: "unexpected character" })
-        kind = tree.T_ERROR
-        next_class = P_OPERAND
-        i = i + (if b >= 240 then 4 else if b >= 224 then 3 else if b >= 192 then 2 else 1)
-      }
-    }
-    match failure {
+    else if in_tag then step = tag_step(buffer, n, b, start, jmode, p, s)
+    else if jmode == J_CHILDREN then step = children_step(b, s)
+    else step = token_step(buffer, n, b, start, p, s)
+    match step.failure {
       some(e) => {
         guard recovering else err(e)
-        kind = tree.T_ERROR
-        next_class = P_OPERAND
-        i = int.max(recover_end, start + 1)
+        step = Step { ...step, kind: tree.T_ERROR, next_class: P_OPERAND }
+        s.i = int.max(step.recover_end, start + 1)
       },
       none => (),
     }
-    // count the lines the token or comment spanned, before anything is
-    // emitted at its end
-    var at = start
-    while at < i {
-      let c = bytes.get_or(buffer, at, -1)
-      if literals.line_end(c) then { at = newline_end(buffer, at); line = line + 1; line_start = at }
-      else if literals.unicode_line_end(buffer, at) then { at = at + 3; line = line + 1; line_start = at }
-      else at = at + 1
-    }
-    if kind != tree.T_NONE then {
-      // the line break before this token: a separator, or nothing; inside an
-      // element a line break is text or nothing
-      if nl_seen then {
-        let is_punct = kind == tree.T_PUNCT
-        let separate = if decorated or jmode == J_CHILDREN or in_tag then false
-          else separates(prev, kind, this_op, this_word, after_do, p.split_gt, buffer, start)
-        if decorated and not (is_punct and this_op == OP_AT) then decorated = false else ()
-        if separate then list.push(tokens, make(tree.T_NEWLINE, nl_at, newline_end(buffer, nl_at), nl_line, nl_line_start)) else ()
-        nl_seen = false
-      } else ()
-      list.push(tokens, make(kind, start, i, first_line, first_line_start))
-      // the type arguments of a tag: back to the tag at the `>` that closes them
-      if jmode == J_TYPE and kind == tree.T_PUNCT then {
-        if this_op == OP_LT then type_depth = type_depth + 1
-        else if this_op == OP_GT then { type_depth = type_depth - 1; if type_depth == 0 then { let _ = list.pop(jsx) } else () }
-        else ()
-      } else ()
-      // a template with no substitution still ends: a zero-width end marker
-      if template_closed then list.push(tokens, make(tree.T_TSTRING_END, i, i, line, line_start)) else ()
-      // a decorator: the line break after it joins, decided above for the
-      // `@` itself and here for what follows it
-      if kind == tree.T_PUNCT and this_op == OP_AT then decorated = true else ()
-      if kind == tree.T_IDENTIFIER and this_word == words.W_CLASS then decorated = false else ()
-      // the `while` of a `do`: after its body's `}`, or after a body with no braces
-      if kind == tree.T_IDENTIFIER and this_word == words.W_DO then do_pending = true
-      else if kind == tree.T_PUNCT and this_op == OP_LBRACE and prev == P_WORD_STATEMENT and prev_word == words.W_DO then do_pending = false
-      else if kind == tree.T_IDENTIFIER and this_word == words.W_WHILE and do_pending then { do_pending = false; after_do = true }
-      else ()
-      prev = next_class
-      prev_op = if kind == tree.T_PUNCT then this_op else 0
-      // `for await (` is still the header of a `for`
-      let keeps_for = this_word == words.W_AWAIT and prev_was_word and prev_word == words.W_FOR
-      if kind == tree.T_IDENTIFIER and not keeps_for then prev_word = this_word else ()
-      prev_was_word = kind == tree.T_IDENTIFIER
-      since_function = if kind == tree.T_IDENTIFIER and this_word == words.W_FUNCTION then 0
-        else if since_function < 99 and (kind == tree.T_IDENTIFIER or (kind == tree.T_PUNCT and this_op == OP_STAR)) then since_function + 1
-        else 99
-      if not (kind == tree.T_PUNCT and this_op == OP_RBRACE) and not (kind == tree.T_IDENTIFIER and this_word == words.W_WHILE) then after_do = false else ()
-    } else ()
+    count_lines(buffer, start, s)
+    if step.kind != tree.T_NONE then finish(buffer, step, start, first_line, first_line_start, jmode, in_tag, p, s) else ()
   }
-  if not list.is_empty(braces) and (list.last(braces) ?? B_BLOCK) == B_TEMPLATE then {
-    guard recovering else err(lex.LexError { line: line, col: i - line_start + 1, message: "unterminated template literal" })
+  if not list.is_empty(s.braces) and (list.last(s.braces) ?? B_BLOCK) == B_TEMPLATE then {
+    guard recovering else err(error_at(s, s.i, "unterminated template literal"))
   } else ()
-  list.push(tokens, make(tree.T_EOF, i, i, line, line_start))
-  ok(tokens)
+  list.push(s.tokens, make(tree.T_EOF, s.i, s.i, s.line, s.line_start))
+  ok(s.tokens)
 }
 
 fn scan(source: String, recovering: Bool) -> Result[List[tree.Token], lex.LexError] = scan_prepared(source, prepare(false, true), recovering)
