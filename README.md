@@ -108,6 +108,19 @@ enough for parsing to matter. gramide's listing carries more (fields,
 top-level bindings, owners on every method: 11,470 rows to 7,977), so the
 listing row compares more work against less.
 
+The same on JSX ([evidence](docs/evidence/tree-sitter-mui-docs-jsx.json)):
+
+| MUI docs `.js`, 547 files, 1.5 MB | gramide | tree-sitter |
+|---|---:|---:|
+| parse verdict, sum over the files | 1.039 s | 0.922 s |
+| declaration listing, sum over the files | 1.072 s | 0.940 s |
+| the largest file (`autocomplete/movies.js`, 266 KB), verdict | 6.6 ms | 13.1 ms |
+
+Small files, so the floor again; and tree-sitter-javascript reports a syntax
+error on 18 of the 547, every one a JSX attribute named `in`
+(`<Collapse in={open}>`), which is JSX and which the compiler and this
+package read.
+
 ## How it is written
 
 - **`src/lexer.almd`**, with `literals` and `words` — the scanner. JavaScript

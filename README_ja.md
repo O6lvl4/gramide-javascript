@@ -94,6 +94,18 @@ C の `main` より 0.5 ms ほど高い。パースが効く大きさのファ�
 gramide の一覧はフィールド・先頭レベルの束縛・全メソッドの所有者を含む
 (11,470 行に対して 7,977 行)ので、一覧の行は多い仕事と少ない仕事の比較になっている。
 
+JSX でも同じ([証拠](docs/evidence/tree-sitter-mui-docs-jsx.json)):
+
+| MUI docs `.js`、547 ファイル、1.5 MB | gramide | tree-sitter |
+|---|---:|---:|
+| パースの合否、全ファイルの合計 | 1.039 秒 | 0.922 秒 |
+| 宣言の一覧、全ファイルの合計 | 1.072 秒 | 0.940 秒 |
+| 最大のファイル(`autocomplete/movies.js`、266 KB)、合否 | 6.6 ms | 13.1 ms |
+
+小さいファイルばかりなので、ここも床の勝負。そして tree-sitter-javascript は 547 のうち
+18 に構文エラーを報告する。すべて `in` という名前の JSX 属性(`<Collapse in={open}>`)で、
+JSX として正しく、コンパイラもこのパッケージも読む。
+
 ## 作り
 
 - **`src/lexer.almd`**(`literals`、`words` と共に)— スキャナ。JavaScript はテーブルでは
