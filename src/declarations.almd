@@ -135,7 +135,8 @@ fn rules() -> List[(String, parser.Rule)] = [
   ("binding_marks", seq([])),
   ("param_modifiers", seq([])),
   ("class_modifiers", seq([])),
-  ("class_heritage", opt(seq([lit("extends"), r("postfix_expr")]))),
+  // the extended class is a type mention when it is a bare name (`extends mix(B)` is not)
+  ("class_heritage", opt(wrap("extends_clause", seq([lit("extends"), r("postfix_expr")])))),
   ("method_body_extra", nothing()),
   ("extra_member", nothing()),
   ("import_kind", seq([])),

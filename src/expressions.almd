@@ -18,7 +18,9 @@ import self.common.{ ident, items }
 
 let ASSIGN_OPS = ["=", "+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", ">>>=", "&=", "|=", "^=", "&&=", "||=", "??="]
 
-fn arguments() -> parser.Rule = wrap("arguments", seq([lit("("), items(r("argument")), lit(")")]))
+// type arguments belong to the call, so `new Map<K, V>()` has one `arguments`
+// kid after its callee and `tags` sees the call
+fn arguments() -> parser.Rule = wrap("arguments", seq([r("type_arguments"), lit("("), items(r("argument")), lit(")")]))
 
 fn rules() -> List[(String, parser.Rule)] = [
   ("name", seq([nott(lits(common.RESERVED)), ident()])),
@@ -74,7 +76,7 @@ fn rules() -> List[(String, parser.Rule)] = [
   // ── the postfix chain: an operand and its suffixes, flat ──────────────
   ("postfix_expr", nest("chain", seq([r("operand"), rep(r("suffix"))]))),
   ("suffix", alt([
-    wrap("arguments", seq([r("type_arguments"), lit("("), items(r("argument")), lit(")")])),
+    arguments(),
     wrap("field_access", seq([lits([".", "?."]), field("field", ident())])),
     wrap("index", seq([opt(lit("?.")), lit("["), r("expression"), lit("]")])),
     seq([lit("?."), arguments()]),
@@ -89,7 +91,7 @@ fn rules() -> List[(String, parser.Rule)] = [
     wrap("import_call", seq([lit("import"), lit("("), items(r("assignment")), lit(")")])),
     r("primary"),
   ])),
-  ("new_expression", wrap("new_expression", seq([lit("new"), r("new_callee"), r("type_arguments"), opt(arguments())]))),
+  ("new_expression", wrap("new_expression", seq([lit("new"), r("new_callee"), alt([arguments(), r("type_arguments")])]))),
   ("new_callee", seq([alt([r("new_expression"), r("primary")]), rep(alt([
     wrap("field_access", seq([lit("."), field("field", ident())])),
     wrap("index", seq([lit("["), r("expression"), lit("]")])),

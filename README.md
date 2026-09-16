@@ -55,6 +55,16 @@ byte range.
 | MUI `docs/data/{material,joy}/components/**/*.js` at `053c4319` (JSX demos) | 547 | 1.5 MB | all parse; all 1,100 declarations match the reference |
 | React `fixtures/{ssr,flight}` at `ff8f88fc` (JSX in `.js`) | 43 | 0.2 MB | all parse; all 221 declarations match the reference |
 
+The same files through `tags`, with every reference compared against a second
+oracle over the compiler's parser ([rules](ci/reference_tags.mjs)):
+
+| corpus | references | result |
+|---|---:|---|
+| Node `lib/` | 38,678 | all match ([evidence](docs/evidence/tags-node-lib.json)) |
+| TypeScript 5.9.3 `lib/*.js` | 127,406 | all match ([evidence](docs/evidence/tags-typescript-lib-js.json)) |
+| MUI docs `.js` | 2,425 | all match ([evidence](docs/evidence/tags-mui-docs-jsx.json)) |
+| React fixtures | 750 | all match ([evidence](docs/evidence/tags-react-fixtures.json)) |
+
 ([evidence](docs/evidence/corpus-node-lib.json),
 [evidence](docs/evidence/corpus-typescript-lib-js.json),
 [evidence](docs/evidence/corpus-mui-docs-jsx.json),
@@ -62,7 +72,10 @@ byte range.
 is a function or a class, a method named with its class or with the binding
 its object was assigned to (`handlers.onClick`), a class field, and a
 `const`, `let`, `var` or `using` binding at the top of the file — a binding
-whose value is a function is a function. The batched `check` over Node's
+whose value is a function is a function. A reference is a call of a name
+(`f(…)`, `a.b(…)`, `new Foo(…)`, an applied decorator) or a class's bare-name
+base; what is deliberately not one (`f()()`, tagged templates, JSX tag names,
+imports) is listed in [ci/tags_cases.py](ci/tags_cases.py). The batched `check` over Node's
 `lib/` runs at about 220 MB/s on eight cores; the 9.1 MB `typescript.js` is
 checked in 0.20 s in one process.
 

@@ -48,13 +48,25 @@ JavaScript バンドルを、このパッケージと TypeScript コンパイラ
 | MUI `docs/data/{material,joy}/components/**/*.js`(`053c4319`、JSX デモ） | 547 | 1.5 MB | 全件パース。1,100 宣言すべてが参照と一致 |
 | React `fixtures/{ssr,flight}`(`ff8f88fc`、`.js` 内の JSX） | 43 | 0.2 MB | 全件パース。221 宣言すべてが参照と一致 |
 
+同じファイルを `tags` にも通し、参照をすべて、コンパイラのパーサの上の第二の oracle
+([規則](ci/reference_tags.mjs))と比較した:
+
+| コーパス | 参照 | 結果 |
+|---|---:|---|
+| Node `lib/` | 38,678 | すべて一致([証拠](docs/evidence/tags-node-lib.json)) |
+| TypeScript 5.9.3 `lib/*.js` | 127,406 | すべて一致([証拠](docs/evidence/tags-typescript-lib-js.json)) |
+| MUI docs `.js` | 2,425 | すべて一致([証拠](docs/evidence/tags-mui-docs-jsx.json)) |
+| React fixtures | 750 | すべて一致([証拠](docs/evidence/tags-react-fixtures.json)) |
+
 ([証拠](docs/evidence/corpus-node-lib.json)、
 [証拠](docs/evidence/corpus-typescript-lib-js.json)、
 [証拠](docs/evidence/corpus-mui-docs-jsx.json)、
 [証拠](docs/evidence/corpus-react-fixtures.json))。ここでの宣言とは、関数と
 クラス、クラス名または代入先の束縛名を冠したメソッド(`handlers.onClick`)、クラスの
 フィールド、そしてファイル先頭レベルの `const` `let` `var` `using` 束縛。値が関数の
-束縛は関数として扱う。Node `lib/` のバッチ `check` は 8 コアで約 220 MB/s、9.1 MB の
+束縛は関数として扱う。参照とは、名前の呼び出し(`f(…)`、`a.b(…)`、`new Foo(…)`、適用された
+デコレータ)と、クラスの裸の名前の基底。意図して参照にしないもの(`f()()`、タグ付きテンプレート、
+JSX のタグ名、import)は [ci/tags_cases.py](ci/tags_cases.py) に列挙してある。Node `lib/` のバッチ `check` は 8 コアで約 220 MB/s、9.1 MB の
 `typescript.js` は 1 プロセスで 0.20 秒。
 
 CI が回す fixture は [ci/README.md](ci/README.md) に。`export` の前後のデコレータ、

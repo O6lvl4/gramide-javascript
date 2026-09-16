@@ -25,7 +25,7 @@ fn symbol_rules() -> package_api.SymbolRules = package_api.SymbolRules {
   // their first word
   envelopes: ["export_statement", "const_declaration", "let_declaration", "var_declaration", "using_declaration"],
   unnamed_envelopes: [],
-  arguments: "arguments", field_access: "field_access", type_mentions: []
+  arguments: "arguments", field_access: "field_access", type_mentions: ["extends_clause"]
 }
 
 test "a JavaScript method is named with its class, or with the binding its object was assigned to" {

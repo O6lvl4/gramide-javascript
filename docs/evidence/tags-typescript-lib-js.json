@@ -12,12 +12,10 @@
   "excluded": [],
   "files": 9,
   "bytes": 15368059,
-  "check_seconds": 0.239,
-  "megabytes_per_second": 64.4,
   "reference_rejected": [],
   "gramide_rejected": [],
-  "range_mismatch": [],
+  "reference_mismatch": [],
   "passed": 9,
-  "symbols": 21216,
+  "references": 127406,
   "input_sha256": "45c9a0c5c3fb30ab116d1e3486bec21132b0ddc7d3359f993811609f736dc7b0"
 }
