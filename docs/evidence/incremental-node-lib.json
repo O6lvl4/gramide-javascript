@@ -1,0 +1,42 @@
+{
+ "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+ "edits": 1000,
+ "seed": 7,
+ "verify_every": 50,
+ "gramide_sha256": "69b94ef7fbdd264919c94bd3368ff33c085b8a5af497551ee9d22ccc79270f99",
+ "tree_sitter_harness_sha256": "0ddf2d0e963ae3eafbd82cc849c3755ff2449abb9bab09b8735c98f18d38d5f2",
+ "files": [
+  {
+   "path": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/node/lib/internal/quic/quic.js",
+   "bytes": 190462,
+   "gramide": {
+    "tool": "gramide",
+    "edits": 1000,
+    "median_us": 41.2,
+    "p90_us": 72.8,
+    "max_us": 638.7,
+    "fallbacks": 0,
+    "mismatches": 0,
+    "initial_mismatch": false,
+    "fallback_reasons": {
+     "no_lex": 0,
+     "no_head": 0,
+     "no_parse": 0,
+     "no_site": 0,
+     "root_own": 0,
+     "error_near": 0
+    },
+    "whole_parse_samples": 20,
+    "whole_parse_median_us": 3400.0
+   },
+   "tree_sitter": {
+    "tool": "tree-sitter",
+    "edits": 1000,
+    "median_us": 105.0,
+    "p90_us": 150.0,
+    "max_us": 208.0,
+    "errors_at_end": 0
+   }
+  }
+ ]
+}

@@ -1,0 +1,42 @@
+{
+  "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+  "binary_sha256": "69b94ef7fbdd264919c94bd3368ff33c085b8a5af497551ee9d22ccc79270f99",
+  "root": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/node/lib",
+  "ext": [
+    ".js",
+    ".mjs",
+    ".cjs"
+  ],
+  "excluded": [],
+  "edits_per_file": 10,
+  "breaking": false,
+  "files": 427,
+  "checked": 416,
+  "edits": 4160,
+  "mismatches": 0,
+  "fallbacks": 0,
+  "fallback_reasons": {
+    "no_lex": 0,
+    "no_head": 0,
+    "no_parse": 0,
+    "no_site": 0,
+    "root_own": 0,
+    "error_near": 0
+  },
+  "skipped_no_long_word": [
+    "assert/strict.js",
+    "dns/promises.js",
+    "fs/promises.js",
+    "inspector/promises.js",
+    "internal/freelist.js",
+    "internal/linkedlist.js",
+    "net/promises.js",
+    "path/posix.js",
+    "path/win32.js",
+    "process.js",
+    "util/types.js"
+  ],
+  "errors": [],
+  "mismatched_files": [],
+  "reference_commit": "5c5bd227b0fea6861b1d75d772dac402d79b10da"
+}

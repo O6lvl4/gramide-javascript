@@ -25,5 +25,14 @@ with tempfile.TemporaryDirectory() as tmp:
         # a reader still answers: the members around the damage, and the function after it
         recovered = run("outline", broken)
         assert "Box.read" in recovered and "Box.also" in recovered and "function f" in recovered, recovered
+    # the incremental reader: twenty keystrokes, each checked against the whole parse
+    keys = root / ("keys.js")
+    keys.write_text("const longIdentifierName = 1\nexport function anotherLongName() { return longIdentifierName + 1 }\n")
+    report = json.loads(run("reparse-bench", keys, "--edits", "20", "--verify", "1", "--seed", "3").splitlines()[-1])
+    assert report["mismatches"] == 0 and report["initial_mismatch"] is False and report["fallbacks"] == 0, report
+    edited = root / ("keys-edited.js")
+    edited.write_text(keys.read_text().replace("longIdentifierName = 1", "longIdentifierNamed = 1", 1))
+    at = keys.read_text().index("Name = 1") + 4
+    assert "anotherLongName" in run("reparse", keys, "--edit", f"{at}:{at}:{at + 1}", "--new", edited)
     assert run("version").splitlines()[0].startswith("gramide_javascript ")
 print("CLI smoke passed: .js .mjs .cjs .jsx check, JSX, outline, symbols and recovered outline")

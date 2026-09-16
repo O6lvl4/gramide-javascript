@@ -106,6 +106,31 @@ JSX でも同じ([証拠](docs/evidence/tree-sitter-mui-docs-jsx.json)):
 18 に構文エラーを報告する。すべて `in` という名前の JSX 属性(`<Collapse in={open}>`)で、
 JSX として正しく、コンパイラもこのパッケージも読む。
 
+### キー入力 1 回
+
+エディタはキー入力のたびに全文をパースし直さず、パーサに編集を渡す。gramide はパース済みの
+ファイルを回復項目(ここではトップレベルの宣言と、波括弧の中の文・クラスメンバ)として持ち、
+編集が触れた最小の項目だけを読み直す
+([仕組み](https://github.com/O6lvl4/gramide/blob/main/docs/incremental.md))。
+同じ 1,000 編集をプロセス内で、gramide の `reparse-bench` と tree-sitter の
+`ts_tree_edit` + 再パース(同じ C ハーネス)に与える。各編集は 13 文字以上の単語の 6 文字目に
+1 文字を打つか消すもので、構文は変わらない。50 回ごとに全文パースと照合
+([証拠](docs/evidence/incremental-node-lib.json)):
+
+| Node `internal/quic/quic.js`(190 KB) | gramide | tree-sitter |
+|---|---:|---:|
+| 中央値 | 41 µs | 105 µs |
+| 90 パーセンタイル | 73 µs | 150 µs |
+| 参考: 全文パース | 3.4 ms | |
+
+出てくるものは全文パースと同じ。Node の `lib/` で 416 ファイルに 10 回ずつランダム編集
+(4,160 編集、すべて同じテキストの全文パースとトークン単位・ノード単位で照合)して差は 0、
+全文へのフォールバックも 0([証拠](docs/evidence/incremental-corpus-node-lib.json))。
+10 回に 1 回、対応のない `{` を打ってファイルを壊し、回復パースと照合しても差は 0。
+4,160 のうち 346 が全文読み直し(壊した編集と、壊れた箇所の中の窓)
+([証拠](docs/evidence/incremental-corpus-node-lib-breaking.json))。`ci/incremental_check.py`
+がこれを回し、`reparse --edit START:OLD_END:NEW_END --new FILE` が 1 編集のコマンド。
+
 ## 作り
 
 - **`src/lexer.almd`**(`literals`、`words` と共に)— スキャナ。JavaScript はテーブルでは

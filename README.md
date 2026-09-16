@@ -121,6 +121,36 @@ error on 18 of the 547, every one a JSX attribute named `in`
 (`<Collapse in={open}>`), which is JSX and which the compiler and this
 package read.
 
+### One keystroke
+
+An editor does not parse the file again on every keystroke; it hands the
+parser the edit. gramide keeps a parsed file as its recover items — here,
+every top-level declaration and every statement or class member inside
+braces — and re-reads the smallest one an edit touched
+([how](https://github.com/O6lvl4/gramide/blob/main/docs/incremental.md)).
+The same 1,000 edits, in-process, for gramide's `reparse-bench` and for
+tree-sitter's `ts_tree_edit` + reparse through the same C harness (each a
+letter typed or deleted six letters into a word of thirteen or more, so
+the file stays what it was syntactically); every fiftieth result checked
+against a whole parse ([evidence](docs/evidence/incremental-node-lib.json)):
+
+| Node `internal/quic/quic.js` (190 KB) | gramide | tree-sitter |
+|---|---:|---:|
+| median | 41 µs | 105 µs |
+| 90th percentile | 73 µs | 150 µs |
+| a whole parse, for scale | 3.4 ms | |
+
+What comes out is the whole parse: over Node's `lib/`, ten random edits in
+each of 416 files (4,160 edits, every one checked token for token and node
+for node against a whole parse of the same text) gave no difference and no
+fall-back ([evidence](docs/evidence/incremental-corpus-node-lib.json)); with
+an unmatched `{` typed every tenth edit, so that the file stops parsing
+and the check runs against the recovering parse, still no difference, with
+346 of the 4,160 edits read as a whole file — the breaking ones and the
+windows inside the damage ([evidence](docs/evidence/incremental-corpus-node-lib-breaking.json)).
+`ci/incremental_check.py` runs these; `reparse --edit START:OLD_END:NEW_END --new FILE`
+is the one-edit command.
+
 ## How it is written
 
 - **`src/lexer.almd`**, with `literals` and `words` — the scanner. JavaScript
