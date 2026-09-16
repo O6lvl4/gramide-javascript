@@ -1,6 +1,6 @@
 {
   "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
-  "binary_sha256": "42c2a79a90b9f98639babb13ba43843ab7b150426e5ca6e39e027e58deff7e6a",
+  "binary_sha256": "5bd84403dd87f159b2252d63dc1f55cb904400dfe1b6fd2a88fce69e46c7c580",
   "root": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/node/lib",
   "ext": [
     ".js",
