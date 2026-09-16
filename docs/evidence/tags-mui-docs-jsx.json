@@ -2,12 +2,10 @@
   "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
   "node": "v22.23.1",
   "typescript": "5.9.3",
-  "binary_sha256": "3b3c3fc3918d11d3e331ee3af555e4a7cfbf3eebb36e5c75b2075a4eec6fa2e7",
+  "binary_sha256": "ee78fafb656e20d847d31572914bb382141147e8d5b8fbf0e542a0a36929aeaa",
   "root": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/material-ui/docs/data",
   "ext": [
-    ".js",
-    ".mjs",
-    ".cjs"
+    ".js"
   ],
   "excluded": [],
   "files": 547,

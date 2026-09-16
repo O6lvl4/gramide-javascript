@@ -7,12 +7,13 @@
 //   property read whose object is a bare name (`a.b(…)`) or anything else
 //   (`this.m(…)`, `a.b.c(…)` and `f().g(…)` report `m`, `c`, `g`);
 //   `f()()`, `a[0]()`, `(f)()`, tagged templates and `import()` are not calls
-//   of a name, and `new Foo` without parentheses is not a call;
+//   of a name, and `new Foo` without parentheses is not a call; a non-null
+//   `!` is not there (`x!.add(…)` is `x.add`, `this.f!(…)` is `f`);
 // - a type mention is a type reference (`x: Foo`, `Foo<T>`, `keyof Foo`,
 //   `as Foo`), an `implements` or interface `extends` clause, or a class's
 //   `extends` when what follows is a bare name; a qualified name (`ns.Foo`)
-//   mentions its first segment; keyword types (`string`), `typeof x`,
-//   `import("m").T` and JSX tag names are not mentions.
+//   mentions its first segment; keyword types (`string`, `intrinsic`), `as
+//   const`, `typeof x`, `import("m").T` and JSX tag names are not mentions.
 // The definitions are the symbols oracle's (reference_ranges.mjs) and are not
 // repeated here.
 import ts from "typescript";
@@ -28,12 +29,15 @@ function refsOf(sf) {
   const out = [];
   const line = (node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
   const nameOf = (node) => ts.isIdentifier(node) ? node.text : ts.isPrivateIdentifier(node) ? node.text : null;
+  const bare = (node) => { while (ts.isNonNullExpression(node)) node = node.expression; return node; };
   const call = (callee) => {
+    callee = bare(callee);
     if (ts.isIdentifier(callee)) out.push(`ref call ${callee.text} L${line(callee)}`);
     else if (ts.isPropertyAccessExpression(callee)) {
       const name = nameOf(callee.name);
       if (name === null) return;
-      const owner = ts.isIdentifier(callee.expression) ? callee.expression.text + "." : "";
+      const object = bare(callee.expression);
+      const owner = ts.isIdentifier(object) ? object.text + "." : "";
       out.push(`ref call ${owner}${name} L${line(callee.name)}`);
     }
   };
@@ -41,7 +45,7 @@ function refsOf(sf) {
     while (ts.isQualifiedName(node) || ts.isPropertyAccessExpression(node)) node = ts.isQualifiedName(node) ? node.left : node.expression;
     return ts.isIdentifier(node) ? node : null;
   };
-  const type = (node) => { if (node) out.push(`ref type ${node.text} L${line(node)}`); };
+  const type = (node) => { if (node && node.text !== "const") out.push(`ref type ${node.text} L${line(node)}`); };
   const visit = (node) => {
     if (ts.isCallExpression(node)) call(node.expression);
     else if (ts.isNewExpression(node)) { if (node.arguments !== undefined) call(node.expression); }
