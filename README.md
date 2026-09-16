@@ -84,6 +84,30 @@ and after `export`, private names, accessors, computed names, a template
 holding declaration-looking text, a `using` binding, five files the
 reference rejects, and 2,000 generated functions.
 
+## Against tree-sitter
+
+tree-sitter-javascript at `58404d8` on the tree-sitter runtime at `1b8407d`,
+through [bench/tree_sitter_ranges.c](bench/tree_sitter_ranges.c): a fresh
+process per file, the parse verdict and then the declaration listing, both
+tools alternating, the minimum of three runs kept
+([evidence](docs/evidence/tree-sitter-node-lib.json), method in
+[bench/tree_sitter.py](bench/tree_sitter.py)).
+
+| Node `lib/`, 427 files, 5.7 MB | gramide | tree-sitter |
+|---|---:|---:|
+| parse verdict, sum over the files | 0.909 s | 0.902 s |
+| declaration listing, sum over the files | 0.999 s | 0.984 s |
+| the largest file (`internal/quic/quic.js`, 190 KB), verdict | 4.6 ms | 7.0 ms |
+| the largest file, listing | 6.4 ms | 8.6 ms |
+| an empty file (the process floor) | 1.78 ms | 1.31 ms |
+
+Parity on the sum, because most of these files are small and the sum is
+mostly process floors, where the Almide runtime costs about half a
+millisecond more than a C `main`; ahead by about 1.5× once a file is big
+enough for parsing to matter. gramide's listing carries more (fields,
+top-level bindings, owners on every method: 11,470 rows to 7,977), so the
+listing row compares more work against less.
+
 ## How it is written
 
 - **`src/lexer.almd`**, with `literals` and `words` — the scanner. JavaScript

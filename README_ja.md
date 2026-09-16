@@ -73,6 +73,27 @@ CI が回す fixture は [ci/README.md](ci/README.md) に。`export` の前後�
 private 名、アクセサ、計算プロパティ名、宣言に見えるテキストを含むテンプレート、
 `using` 束縛、参照が拒否する 5 ファイル、生成した 2,000 関数。
 
+## tree-sitter との比較
+
+tree-sitter-javascript(`58404d8`)を tree-sitter ランタイム(`1b8407d`)の上で
+[bench/tree_sitter_ranges.c](bench/tree_sitter_ranges.c) から呼び、ファイルごとに新しい
+プロセスで、パースの合否と宣言の一覧を、両者交互に、3 回の最小値で計測
+([証拠](docs/evidence/tree-sitter-node-lib.json)、方法は
+[bench/tree_sitter.py](bench/tree_sitter.py))。
+
+| Node `lib/`、427 ファイル、5.7 MB | gramide | tree-sitter |
+|---|---:|---:|
+| パースの合否、全ファイルの合計 | 0.909 秒 | 0.902 秒 |
+| 宣言の一覧、全ファイルの合計 | 0.999 秒 | 0.984 秒 |
+| 最大のファイル(`internal/quic/quic.js`、190 KB)、合否 | 4.6 ms | 7.0 ms |
+| 最大のファイル、一覧 | 6.4 ms | 8.6 ms |
+| 空ファイル(プロセスの床) | 1.78 ms | 1.31 ms |
+
+合計は同等。ファイルの大半が小さく、合計はほぼプロセスの床で、Almide ランタイムは
+C の `main` より 0.5 ms ほど高い。パースが効く大きさのファイルでは約 1.5 倍速い。
+gramide の一覧はフィールド・先頭レベルの束縛・全メソッドの所有者を含む
+(11,470 行に対して 7,977 行)ので、一覧の行は多い仕事と少ない仕事の比較になっている。
+
 ## 作り
 
 - **`src/lexer.almd`**(`literals`、`words` と共に)— スキャナ。JavaScript はテーブルでは
