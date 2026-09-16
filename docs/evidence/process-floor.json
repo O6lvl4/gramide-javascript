@@ -1,0 +1,24 @@
+{
+  "what": "Where the process floor goes: each command spawned with posix_spawn, stdout and stderr to /dev/null, 30 warm-up runs then 300 timed; minimum and median in milliseconds. Same machine and day as tree-sitter-node-lib.json (macOS, Apple Silicon). The harness is a 20-line C loop; the empty programs are `int main(){return 0;}`, `fn main(){}` (Rust with std), a `#![no_main]` Rust program, and an Almide `effect fn main` that prints nothing.",
+  "date": "2026-09-16",
+  "gramide_cli": "0.4.3 (engine 0.2.0, javascript 0.3.1)",
+  "tree_sitter_harness": "bench/tree_sitter_ranges.c, -DLANG=tree_sitter_javascript",
+  "rows": [
+    {"program": "C, empty main", "min_ms": 0.83, "median_ms": 0.87},
+    {"program": "Rust, #![no_main]", "min_ms": 0.85, "median_ms": 1.01},
+    {"program": "tree-sitter harness, --check on an empty file", "min_ms": 0.96, "median_ms": 1.04},
+    {"program": "Rust, empty main with std", "min_ms": 0.99, "median_ms": 1.03},
+    {"program": "Almide, empty main", "min_ms": 1.00, "median_ms": 1.13},
+    {"program": "Almide, main holding a 60,000-element list literal", "min_ms": 1.01, "median_ms": 1.11},
+    {"program": "gramide version", "min_ms": 1.08, "median_ms": 1.14},
+    {"program": "gramide check on an empty .js file", "min_ms": 1.24, "median_ms": 1.29},
+    {"program": "gramide check on an empty .ts / .tsx / .go / .py / .rs file", "min_ms": 1.20, "median_ms": 1.30}
+  ],
+  "reading": {
+    "gap_to_tree_sitter_ms": 0.28,
+    "rust_std_runtime_init_ms": 0.15,
+    "gramide_binary_and_package_registration_ms": 0.10,
+    "gramide_lexer_and_table_preparation_per_language_ms": 0.16,
+    "note": "A list literal costs nothing at start-up, so the committed table is not the cost. The floor is paid once per process; a batched check, an outline over a directory and an editor session pay it once for hundreds of files, so it is left as it is."
+  }
+}

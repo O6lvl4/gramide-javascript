@@ -102,9 +102,14 @@ tools alternating, the minimum of three runs kept
 | an empty file (the process floor) | 1.78 ms | 1.31 ms |
 
 Parity on the sum, because most of these files are small and the sum is
-mostly process floors, where the Almide runtime costs about half a
-millisecond more than a C `main`; ahead by about 1.5× once a file is big
-enough for parsing to matter. gramide's listing carries more (fields,
+mostly process floors; ahead by about 1.5× once a file is big enough for
+parsing to matter. The floor itself, measured with `posix_spawn`, is 0.28 ms
+above the C harness: 0.15 ms is Rust's standard runtime starting (the same
+for any Rust program with a `main`), the rest is this binary paging in and
+preparing a language's scanner and table
+([evidence](docs/evidence/process-floor.json)). It is paid once per process,
+so a batched `check`, an outline over a directory or an editor session pay it
+once for hundreds of files, and it is left as it is. gramide's listing carries more (fields,
 top-level bindings, owners on every method: 11,470 rows to 7,977), so the
 listing row compares more work against less.
 
