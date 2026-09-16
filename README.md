@@ -141,9 +141,9 @@ against a whole parse ([evidence](docs/evidence/incremental-node-lib.json)):
 
 | Node `internal/quic/quic.js` (190 KB) | gramide | tree-sitter |
 |---|---:|---:|
-| median | 41 µs | 105 µs |
-| 90th percentile | 73 µs | 150 µs |
-| a whole parse, for scale | 3.4 ms | |
+| median | 46 µs | 100 µs |
+| 90th percentile | 79 µs | 147 µs |
+| a whole parse, for scale | 3.2 ms | |
 
 What comes out is the whole parse: over Node's `lib/`, ten random edits in
 each of 416 files (4,160 edits, every one checked token for token and node
