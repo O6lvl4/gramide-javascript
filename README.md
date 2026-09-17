@@ -141,9 +141,9 @@ against a whole parse ([evidence](docs/evidence/incremental-node-lib.json)):
 
 | Node `internal/quic/quic.js` (190 KB) | gramide | tree-sitter |
 |---|---:|---:|
-| median | 8.7 µs | 106 µs |
-| 90th percentile | 53 µs | 153 µs |
-| a whole parse, for scale | 3.5 ms | |
+| median | 6.0 µs | 98 µs |
+| 90th percentile | 48 µs | 140 µs |
+| a whole parse, for scale | 3.2 ms | |
 
 What comes out is the whole parse: over Node's `lib/`, ten random edits in
 each of 416 files (4,160 edits, every one checked token for token and node
@@ -155,6 +155,30 @@ and the check runs against the recovering parse, still no difference, with
 windows inside the damage ([evidence](docs/evidence/incremental-corpus-node-lib-breaking.json)).
 `ci/incremental_check.py` runs these; `reparse --edit START:OLD_END:NEW_END --new FILE`
 is the one-edit command.
+
+### A broken file
+
+An editor's file is broken more often than not. `bench/recovery.py` breaks every
+file of the corpus in four ways, one at a time — a `{` typed at the start of a
+word, a `}` deleted, a `)` deleted, a `(` typed — and compares what each tool
+still lists (gramide's `outline`, which reads the recovered parse; tree-sitter's
+tree through the same harness, `--recover`) with its own listing of the whole
+file, by kind, name and start line. A declaration whose lines hold the break is
+expected to go; a break is *clean* when nothing else is lost and nothing new
+appears ([evidence](docs/evidence/recovery-node-lib.json), [how it recovers](https://github.com/O6lvl4/gramide/blob/main/docs/recovery.md)):
+
+| Node `lib/`: 427 files, 1,694 breaks | gramide | tree-sitter |
+|---|---:|---:|
+| declarations kept, all breaks | 94.3% | 95.9% |
+| clean breaks (nothing lost beyond the break, nothing invented) | 89.7% | 90.6% |
+| clean breaks, `insert {` | 89.0% | 89.7% |
+| clean breaks, `delete }` | 77.2% | 83.7% |
+| clean breaks, `delete )` | 95.0% | 93.9% |
+| clean breaks, `insert (` | 97.2% | 94.8% |
+
+Even overall. The gap is a `}` deleted from a method, where the class body
+runs on: tree-sitter puts the missing brace where it belongs, gramide either
+drops the class or keeps it and nests what follows.
 
 ## How it is written
 

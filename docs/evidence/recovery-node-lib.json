@@ -1,0 +1,304 @@
+{
+ "root": "/Users/o6lvl4/workspace/github.com/O6lvl4/almide-references/node/lib",
+ "kinds": [
+  "class",
+  "function",
+  "method"
+ ],
+ "files": 427,
+ "skipped_not_clean": 0,
+ "breaks_per_file": 4,
+ "seed": 7,
+ "break_kinds": [
+  "insert {",
+  "delete }",
+  "delete )",
+  "insert ("
+ ],
+ "gramide": {
+  "total": {
+   "breaks": 1694,
+   "baseline": 32304,
+   "kept": 30467,
+   "lost_touching": 324,
+   "lost_collateral": 1513,
+   "spurious": 46,
+   "clean_breaks": 1519,
+   "no_error_reported": 1694,
+   "error_nodes": 6959
+  },
+  "by_break": [
+   {
+    "breaks": 427,
+    "baseline": 8076,
+    "kept": 7715,
+    "lost_touching": 72,
+    "lost_collateral": 289,
+    "spurious": 9,
+    "clean_breaks": 380,
+    "no_error_reported": 427,
+    "error_nodes": 1392
+   },
+   {
+    "breaks": 416,
+    "baseline": 8076,
+    "kept": 6935,
+    "lost_touching": 157,
+    "lost_collateral": 984,
+    "spurious": 21,
+    "clean_breaks": 321,
+    "no_error_reported": 416,
+    "error_nodes": 3012
+   },
+   {
+    "breaks": 424,
+    "baseline": 8076,
+    "kept": 7797,
+    "lost_touching": 62,
+    "lost_collateral": 217,
+    "spurious": 11,
+    "clean_breaks": 403,
+    "no_error_reported": 424,
+    "error_nodes": 1601
+   },
+   {
+    "breaks": 427,
+    "baseline": 8076,
+    "kept": 8020,
+    "lost_touching": 33,
+    "lost_collateral": 23,
+    "spurious": 5,
+    "clean_breaks": 415,
+    "no_error_reported": 427,
+    "error_nodes": 954
+   }
+  ],
+  "worst": [
+   [
+    71,
+    0,
+    "internal/vfs/file_system.js",
+    "delete }",
+    7942,
+    274
+   ],
+   [
+    55,
+    0,
+    "internal/vfs/setup.js",
+    "delete }",
+    25761,
+    736
+   ],
+   [
+    55,
+    0,
+    "internal/vfs/setup.js",
+    "delete )",
+    21526,
+    618
+   ],
+   [
+    54,
+    0,
+    "internal/test_runner/test.js",
+    "delete }",
+    45893,
+    1589
+   ],
+   [
+    50,
+    0,
+    "internal/readline/interface.js",
+    "delete }",
+    15568,
+    554
+   ],
+   [
+    47,
+    0,
+    "internal/vfs/providers/memory.js",
+    "delete }",
+    23632,
+    796
+   ],
+   [
+    42,
+    0,
+    "internal/zip/file.js",
+    "delete }",
+    26361,
+    646
+   ],
+   [
+    40,
+    0,
+    "internal/bench_runner/harness.js",
+    "insert {",
+    15101,
+    542
+   ],
+   [
+    40,
+    0,
+    "internal/bench_runner/harness.js",
+    "delete }",
+    14127,
+    501
+   ],
+   [
+    37,
+    0,
+    "readline.js",
+    "delete }",
+    6406,
+    230
+   ]
+  ]
+ },
+ "tree_sitter": {
+  "total": {
+   "breaks": 1694,
+   "baseline": 31908,
+   "kept": 30593,
+   "lost_touching": 241,
+   "lost_collateral": 1074,
+   "spurious": 79,
+   "clean_breaks": 1534,
+   "no_error_reported": 394,
+   "error_nodes": 4406
+  },
+  "by_break": [
+   {
+    "breaks": 427,
+    "baseline": 7977,
+    "kept": 7572,
+    "lost_touching": 52,
+    "lost_collateral": 353,
+    "spurious": 27,
+    "clean_breaks": 383,
+    "no_error_reported": 159,
+    "error_nodes": 1514
+   },
+   {
+    "breaks": 416,
+    "baseline": 7977,
+    "kept": 7518,
+    "lost_touching": 128,
+    "lost_collateral": 331,
+    "spurious": 30,
+    "clean_breaks": 348,
+    "no_error_reported": 37,
+    "error_nodes": 1039
+   },
+   {
+    "breaks": 424,
+    "baseline": 7977,
+    "kept": 7700,
+    "lost_touching": 33,
+    "lost_collateral": 244,
+    "spurious": 9,
+    "clean_breaks": 398,
+    "no_error_reported": 33,
+    "error_nodes": 1034
+   },
+   {
+    "breaks": 427,
+    "baseline": 7977,
+    "kept": 7803,
+    "lost_touching": 28,
+    "lost_collateral": 146,
+    "spurious": 13,
+    "clean_breaks": 405,
+    "no_error_reported": 165,
+    "error_nodes": 819
+   }
+  ],
+  "worst": [
+   [
+    114,
+    0,
+    "internal/webstreams/readablestream.js",
+    "insert {",
+    35426,
+    1212
+   ],
+   [
+    69,
+    0,
+    "internal/buffer.js",
+    "delete )",
+    6537,
+    246
+   ],
+   [
+    68,
+    3,
+    "internal/url.js",
+    "insert {",
+    14495,
+    495
+   ],
+   [
+    38,
+    0,
+    "internal/event_target.js",
+    "insert (",
+    6211,
+    267
+   ],
+   [
+    37,
+    0,
+    "internal/readline/interface.js",
+    "delete }",
+    15568,
+    554
+   ],
+   [
+    29,
+    3,
+    "events.js",
+    "delete )",
+    4202,
+    144
+   ],
+   [
+    26,
+    0,
+    "internal/vfs/file_system.js",
+    "delete }",
+    7942,
+    274
+   ],
+   [
+    25,
+    0,
+    "internal/histogram.js",
+    "delete )",
+    5967,
+    259
+   ],
+   [
+    24,
+    2,
+    "_http_server.js",
+    "insert (",
+    30398,
+    933
+   ],
+   [
+    22,
+    0,
+    "internal/ffi/fast-api.js",
+    "insert {",
+    1343,
+    55
+   ]
+  ]
+ },
+ "both_lost_collateral": 88,
+ "only_gramide_lost_collateral": 79,
+ "only_tree_sitter_lost_collateral": 67,
+ "seconds": 20.9
+}

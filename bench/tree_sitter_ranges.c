@@ -105,8 +105,73 @@ static int bench_edits(const char *path, long edits, unsigned long seed) {
   return 0;
 }
 
+// --recover KIND,KIND,... FILE: parse the file (broken or not) and print every
+// node of the named kinds with its `name` field, as the listing does, plus
+// every ERROR and MISSING node as {"kind":"ERROR"|"MISSING",...} with its byte
+// range, so that a recovery comparison can see what survived and what the
+// parser gave up on. Exit 1 when the tree has an error.
+static int recover(const char *path, const char *kinds_arg) {
+  FILE *file = fopen(path, "rb");
+  if (!file || fseek(file, 0, SEEK_END)) return 2;
+  long size = ftell(file);
+  if (size < 0 || fseek(file, 0, SEEK_SET)) return 2;
+  char *source = malloc((size_t)size + 1);
+  if (!source || fread(source, 1, (size_t)size, file) != (size_t)size) return 2;
+  fclose(file);
+  source[size] = 0;
+  char *kinds = strdup(kinds_arg);
+  TSParser *parser = ts_parser_new();
+  if (!parser || !ts_parser_set_language(parser, LANG())) return 2;
+  TSTree *tree = ts_parser_parse_string(parser, NULL, source, (uint32_t)size);
+  if (!tree) return 2;
+  int errors = ts_node_has_error(ts_tree_root_node(tree));
+  TSTreeCursor cursor = ts_tree_cursor_new(ts_tree_root_node(tree));
+  for (;;) {
+    TSNode node = ts_tree_cursor_current_node(&cursor);
+    const char *kind = ts_node_type(node);
+    if (ts_node_is_error(node) || ts_node_is_missing(node)) {
+      printf("{\"kind\":\"%s\",\"name\":\"\",\"start\":%u,\"end\":%u,\"start_byte\":%u,\"end_byte\":%u}\n",
+        ts_node_is_missing(node) ? "MISSING" : "ERROR",
+        ts_node_start_point(node).row+1, ts_node_end_point(node).row+1,
+        ts_node_start_byte(node), ts_node_end_byte(node));
+    } else if (ts_node_is_named(node)) {
+      int wanted = 0;
+      size_t klen = strlen(kind);
+      for (const char *k = kinds; *k && !wanted; ) {
+        const char *e = strchr(k, ','); size_t n = e ? (size_t)(e - k) : strlen(k);
+        wanted = n == klen && !strncmp(k, kind, n);
+        k = e ? e + 1 : k + n;
+      }
+      if (wanted) {
+        TSNode name = ts_node_child_by_field_name(node, "name", 4);
+        uint32_t start = ts_node_is_null(name) ? 0 : ts_node_start_byte(name), end = ts_node_is_null(name) ? 0 : ts_node_end_byte(name);
+        printf("{\"kind\":\"%s\",\"name\":\"", kind);
+        for (uint32_t i = start; i < end; i++) {  // a computed or quoted name holds JSON's own characters
+          unsigned char c = (unsigned char)source[i];
+          if (c == '"' || c == '\\') printf("\\%c", c); else if (c < 0x20) printf("\\u%04x", c); else putchar(c);
+        }
+        printf("\",\"start\":%u,\"end\":%u,\"start_byte\":%u,\"end_byte\":%u}\n",
+          ts_node_start_point(node).row+1, ts_node_end_point(node).row+1,
+          ts_node_start_byte(node), ts_node_end_byte(node));
+      }
+    }
+    if (ts_tree_cursor_goto_first_child(&cursor)) continue;
+    while (!ts_tree_cursor_goto_next_sibling(&cursor)) {
+      if (!ts_tree_cursor_goto_parent(&cursor)) goto done;
+    }
+  }
+done:
+  ts_tree_cursor_delete(&cursor);
+  ts_tree_delete(tree);
+  ts_parser_delete(parser);
+  free(source);
+  free(kinds);
+  return errors ? 1 : 0;
+}
+
 int main(int argc, char **argv) {
   if (argc == 6 && !strcmp(argv[1], "--edits") && !strcmp(argv[3], "--seed")) return bench_edits(argv[5], atol(argv[2]), strtoul(argv[4], NULL, 10));
+  if (argc == 4 && !strcmp(argv[1], "--recover")) return recover(argv[3], argv[2]);
   int check = argc == 3 && !strcmp(argv[1], "--check");
   const char *path = argv[argc - 1];
   if (argc < 2 || argc > 3) return 2;
