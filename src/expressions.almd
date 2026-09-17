@@ -48,12 +48,15 @@ fn rules() -> List[(String, parser.Rule)] = [
     alt([r("parameters"), wrap("parameters", wrap("parameter", field("name", r("name"))))]),
     r("return_annotation"), lit("=>"), alt([r("block"), r("assignment")])
   ]))),
-  // a run of tokens balanced across brackets, read without being understood
+  // a run of tokens balanced across brackets, read without being understood.
+  // An opener is read only as the group it opens, never as a lone token:
+  // with both ways open, a bracket an edit left unclosed forks the read at
+  // every opener after it, and a file broken in thirty places costs 2^30
   ("tt", alt([
     seq([lit("("), rep(r("tt")), lit(")")]),
     seq([lit("["), rep(r("tt")), lit("]")]),
     seq([lit("{"), rep(r("tt")), lit("}")]),
-    seq([nott(lits([")", "]", "}"])), any()]),
+    seq([nott(lits([")", "]", "}", "(", "[", "{"])), any()]),
   ])),
   ("conditional", nest("conditional", seq([r("binary"), opt(seq([lit("?"), r("assignment"), lit(":"), r("assignment")]))]))),
 

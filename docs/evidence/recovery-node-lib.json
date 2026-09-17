@@ -19,13 +19,13 @@
   "total": {
    "breaks": 1694,
    "baseline": 32304,
-   "kept": 31037,
-   "lost_touching": 214,
+   "kept": 31038,
+   "lost_touching": 213,
    "lost_collateral": 1053,
    "spurious": 32,
    "clean_breaks": 1561,
    "no_error_reported": 1694,
-   "error_nodes": 4893
+   "error_nodes": 4888
   },
   "by_break": [
    {
@@ -37,18 +37,18 @@
     "spurious": 8,
     "clean_breaks": 386,
     "no_error_reported": 427,
-    "error_nodes": 1156
+    "error_nodes": 1154
    },
    {
     "breaks": 416,
     "baseline": 8076,
-    "kept": 7225,
-    "lost_touching": 108,
+    "kept": 7226,
+    "lost_touching": 107,
     "lost_collateral": 743,
     "spurious": 12,
     "clean_breaks": 342,
     "no_error_reported": 416,
-    "error_nodes": 1891
+    "error_nodes": 1888
    },
    {
     "breaks": 424,
@@ -300,5 +300,5 @@
  "both_lost_collateral": 85,
  "only_gramide_lost_collateral": 43,
  "only_tree_sitter_lost_collateral": 70,
- "seconds": 68.2
+ "seconds": 68.3
 }
