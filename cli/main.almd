@@ -65,9 +65,9 @@ effect fn main() -> Unit = {
   // the one command the shipped binary does not have: the grammar, compiled and
   // written down, which is what src/table.almd is
   if list.first(argv) == some("gen-table") then println(tables.render("javascript", grammar.rules()))
-  else if list.first(argv) == some("lex-check") then lex_check(list.drop(argv, 1))
+  else if list.first(argv) == some("lex-check") then lex_check(list.drop(argv, 1))!
   else match cli.batch_of(argv) {
-    some((cmd, paths)) => cli.report(parallel(cmd, paths)!),
-    none => cli.run(cli.Program { name: "gramide_javascript", version: pkg.VERSION, packages: packages() }, argv),
+    some((cmd, paths)) => cli.report(parallel(cmd, paths)!)!,
+    none => cli.run(cli.Program { name: "gramide_javascript", version: pkg.VERSION, packages: packages() }, argv)!,
   }
 }
