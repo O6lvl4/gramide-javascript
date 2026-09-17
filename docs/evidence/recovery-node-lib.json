@@ -19,58 +19,58 @@
   "total": {
    "breaks": 1694,
    "baseline": 32304,
-   "kept": 30467,
-   "lost_touching": 324,
-   "lost_collateral": 1513,
-   "spurious": 46,
-   "clean_breaks": 1519,
+   "kept": 31037,
+   "lost_touching": 214,
+   "lost_collateral": 1053,
+   "spurious": 32,
+   "clean_breaks": 1561,
    "no_error_reported": 1694,
-   "error_nodes": 6959
+   "error_nodes": 4893
   },
   "by_break": [
    {
     "breaks": 427,
     "baseline": 8076,
-    "kept": 7715,
-    "lost_touching": 72,
-    "lost_collateral": 289,
-    "spurious": 9,
-    "clean_breaks": 380,
+    "kept": 7775,
+    "lost_touching": 54,
+    "lost_collateral": 247,
+    "spurious": 8,
+    "clean_breaks": 386,
     "no_error_reported": 427,
-    "error_nodes": 1392
+    "error_nodes": 1156
    },
    {
     "breaks": 416,
     "baseline": 8076,
-    "kept": 6935,
-    "lost_touching": 157,
-    "lost_collateral": 984,
-    "spurious": 21,
-    "clean_breaks": 321,
+    "kept": 7225,
+    "lost_touching": 108,
+    "lost_collateral": 743,
+    "spurious": 12,
+    "clean_breaks": 342,
     "no_error_reported": 416,
-    "error_nodes": 3012
+    "error_nodes": 1891
    },
    {
     "breaks": 424,
     "baseline": 8076,
-    "kept": 7797,
-    "lost_touching": 62,
-    "lost_collateral": 217,
-    "spurious": 11,
-    "clean_breaks": 403,
+    "kept": 8012,
+    "lost_touching": 21,
+    "lost_collateral": 43,
+    "spurious": 8,
+    "clean_breaks": 416,
     "no_error_reported": 424,
-    "error_nodes": 1601
+    "error_nodes": 973
    },
    {
     "breaks": 427,
     "baseline": 8076,
-    "kept": 8020,
-    "lost_touching": 33,
-    "lost_collateral": 23,
-    "spurious": 5,
-    "clean_breaks": 415,
+    "kept": 8025,
+    "lost_touching": 31,
+    "lost_collateral": 20,
+    "spurious": 4,
+    "clean_breaks": 417,
     "no_error_reported": 427,
-    "error_nodes": 954
+    "error_nodes": 873
    }
   ],
   "worst": [
@@ -81,22 +81,6 @@
     "delete }",
     7942,
     274
-   ],
-   [
-    55,
-    0,
-    "internal/vfs/setup.js",
-    "delete }",
-    25761,
-    736
-   ],
-   [
-    55,
-    0,
-    "internal/vfs/setup.js",
-    "delete )",
-    21526,
-    618
    ],
    [
     54,
@@ -115,14 +99,6 @@
     554
    ],
    [
-    47,
-    0,
-    "internal/vfs/providers/memory.js",
-    "delete }",
-    23632,
-    796
-   ],
-   [
     42,
     0,
     "internal/zip/file.js",
@@ -139,20 +115,44 @@
     542
    ],
    [
-    40,
+    32,
     0,
-    "internal/bench_runner/harness.js",
+    "internal/streams/fast-utf8-stream.js",
     "delete }",
-    14127,
-    501
+    18174,
+    653
    ],
    [
-    37,
+    28,
     0,
-    "readline.js",
+    "internal/perf/resource_timing.js",
     "delete }",
-    6406,
-    230
+    3897,
+    117
+   ],
+   [
+    27,
+    0,
+    "internal/test_runner/mock/mock_timers.js",
+    "delete }",
+    20603,
+    741
+   ],
+   [
+    26,
+    0,
+    "internal/repl/history.js",
+    "delete }",
+    13032,
+    422
+   ],
+   [
+    22,
+    0,
+    "internal/vfs/providers/ziparchive.js",
+    "delete }",
+    14872,
+    431
    ]
   ]
  },
@@ -297,8 +297,8 @@
    ]
   ]
  },
- "both_lost_collateral": 88,
- "only_gramide_lost_collateral": 79,
- "only_tree_sitter_lost_collateral": 67,
- "seconds": 20.9
+ "both_lost_collateral": 85,
+ "only_gramide_lost_collateral": 43,
+ "only_tree_sitter_lost_collateral": 70,
+ "seconds": 68.2
 }

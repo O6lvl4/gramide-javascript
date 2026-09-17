@@ -141,9 +141,9 @@ against a whole parse ([evidence](docs/evidence/incremental-node-lib.json)):
 
 | Node `internal/quic/quic.js` (190 KB) | gramide | tree-sitter |
 |---|---:|---:|
-| median | 6.0 µs | 98 µs |
-| 90th percentile | 48 µs | 140 µs |
-| a whole parse, for scale | 3.2 ms | |
+| median | 8.8 µs | 101 µs |
+| 90th percentile | 52 µs | 146 µs |
+| a whole parse, for scale | 3.5 ms | |
 
 What comes out is the whole parse: over Node's `lib/`, ten random edits in
 each of 416 files (4,160 edits, every one checked token for token and node
@@ -169,16 +169,17 @@ appears ([evidence](docs/evidence/recovery-node-lib.json), [how it recovers](htt
 
 | Node `lib/`: 427 files, 1,694 breaks | gramide | tree-sitter |
 |---|---:|---:|
-| declarations kept, all breaks | 94.3% | 95.9% |
-| clean breaks (nothing lost beyond the break, nothing invented) | 89.7% | 90.6% |
-| clean breaks, `insert {` | 89.0% | 89.7% |
-| clean breaks, `delete }` | 77.2% | 83.7% |
-| clean breaks, `delete )` | 95.0% | 93.9% |
-| clean breaks, `insert (` | 97.2% | 94.8% |
+| declarations kept, all breaks | 96.1% | 95.9% |
+| clean breaks (nothing lost beyond the break, nothing invented) | 92.1% | 90.6% |
+| clean breaks, `insert {` | 90.4% | 89.7% |
+| clean breaks, `delete }` | 82.2% | 83.7% |
+| clean breaks, `delete )` | 98.1% | 93.9% |
+| clean breaks, `insert (` | 97.7% | 94.8% |
 
-Even overall. The gap is a `}` deleted from a method, where the class body
-runs on: tree-sitter puts the missing brace where it belongs, gramide either
-drops the class or keeps it and nests what follows.
+Ahead on three kinds of four and overall. The one where tree-sitter keeps
+more is a `}` deleted from a method, where the class body runs on: tree-sitter
+puts the missing brace where it belongs, gramide either drops the class or
+keeps it and nests what follows.
 
 ## How it is written
 

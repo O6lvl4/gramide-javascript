@@ -12,7 +12,7 @@ import self.lexer
 import self.symbols
 import self.table
 
-let VERSION = "0.3.9"
+let VERSION = "0.3.10"
 
 // The operator and word tables are packed once here, not once per file.
 fn prepare_lexer() -> package_api.Tokenizer = {
