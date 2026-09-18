@@ -169,17 +169,17 @@ appears ([evidence](docs/evidence/recovery-node-lib.json), [how it recovers](htt
 
 | Node `lib/`: 427 files, 1,694 breaks | gramide | tree-sitter |
 |---|---:|---:|
-| declarations kept, all breaks | 96.1% | 95.9% |
-| clean breaks (nothing lost beyond the break, nothing invented) | 92.1% | 90.6% |
-| clean breaks, `insert {` | 90.4% | 89.7% |
-| clean breaks, `delete }` | 82.2% | 83.7% |
-| clean breaks, `delete )` | 98.1% | 93.9% |
-| clean breaks, `insert (` | 97.7% | 94.8% |
+| declarations kept, all breaks | 99.4% | 95.9% |
+| clean breaks (nothing lost beyond the break, nothing invented) | 98.3% | 90.6% |
+| clean breaks, `insert {` | 97.9% | 89.7% |
+| clean breaks, `delete }` | 96.6% | 83.7% |
+| clean breaks, `delete )` | 99.5% | 93.9% |
+| clean breaks, `insert (` | 99.3% | 94.8% |
 
-Ahead on three kinds of four and overall. The one where tree-sitter keeps
-more is a `}` deleted from a method, where the class body runs on: tree-sitter
-puts the missing brace where it belongs, gramide either drops the class or
-keeps it and nests what follows.
+Ahead on every kind of break. A `}` deleted from a method, where tree-sitter
+used to keep more, now ends the method's body before the next member,
+indented as the method is, and the class reads on: 96.6% of those breaks are
+clean, against 83.7% for tree-sitter and 82.2% before.
 
 ## How it is written
 
