@@ -14,8 +14,8 @@ fn ident_byte(b: Int) -> Bool = (b >= 65 and b <= 90) or (b >= 97 and b <= 122) 
 fn line_end(b: Int) -> Bool = b == 10 or b == 13
 // U+2028 and U+2029 are line terminators too: E2 80 A8 / E2 80 A9
 fn unicode_line_end(buffer: Bytes, at: Int) -> Bool =
-  bytes.get_or(buffer, at, -1) == 226 and bytes.get_or(buffer, at + 1, -1) == 128
-  and (bytes.get_or(buffer, at + 2, -1) == 168 or bytes.get_or(buffer, at + 2, -1) == 169)
+  bytes.get(buffer, at) ?? -1 == 226 and bytes.get(buffer, at + 1) ?? -1 == 128
+  and (bytes.get(buffer, at + 2) ?? -1 == 168 or bytes.get(buffer, at + 2) ?? -1 == 169)
 
 fn failure(line: Int, col: Int, message: String) -> lex.LexError = lex.LexError { line: line, col: col, message: message }
 
@@ -24,13 +24,13 @@ fn failure(line: Int, col: Int, message: String) -> lex.LexError = lex.LexError 
 // exponent, `.5`, `1.`, and a BigInt `n` suffix. A word glued to the end
 // (`3in`) is not a number and not an identifier either.
 fn starts_number(buffer: Bytes, at: Int) -> Bool =
-  digit(bytes.get_or(buffer, at, -1)) or (bytes.get_or(buffer, at, -1) == 46 and digit(bytes.get_or(buffer, at + 1, -1)))
+  digit(bytes.get(buffer, at) ?? -1) or (bytes.get(buffer, at) ?? -1 == 46 and digit(bytes.get(buffer, at + 1) ?? -1))
 
 fn digits_of(buffer: Bytes, start: Int, base: Int) -> Int = {
   var i = start
   var scanning = true
   while scanning {
-    let b = bytes.get_or(buffer, i, -1)
+    let b = bytes.get(buffer, i) ?? -1
     let ok_digit = if base == 16 then hex(b) else if base == 10 then digit(b) else if base == 8 then (b >= 48 and b <= 55) else (b == 48 or b == 49)
     if ok_digit then i = i + 1
     else if b == 95 and i > start then i = i + 1
@@ -41,8 +41,8 @@ fn digits_of(buffer: Bytes, start: Int, base: Int) -> Int = {
 
 fn scan_number(buffer: Bytes, start: Int, line: Int, col: Int) -> Result[Int, lex.LexError] = {
   let error = failure(line, col, "malformed number")
-  let first = bytes.get_or(buffer, start, -1)
-  let second = bytes.get_or(buffer, start + 1, -1)
+  let first = bytes.get(buffer, start) ?? -1
+  let second = bytes.get(buffer, start + 1) ?? -1
   let prefixed = first == 48 and (second == 120 or second == 88 or second == 111 or second == 79 or second == 98 or second == 66)
   var i = start
   if prefixed then {
@@ -52,18 +52,18 @@ fn scan_number(buffer: Bytes, start: Int, line: Int, col: Int) -> Result[Int, le
   } else {
     i = digits_of(buffer, start, 10)
     // `.5`, `1.`, `1.5`
-    if bytes.get_or(buffer, i, -1) == 46 then i = digits_of(buffer, i + 1, 10) else ()
-    let e = bytes.get_or(buffer, i, -1)
+    if bytes.get(buffer, i) ?? -1 == 46 then i = digits_of(buffer, i + 1, 10) else ()
+    let e = bytes.get(buffer, i) ?? -1
     if e == 101 or e == 69 then {
-      let sign = bytes.get_or(buffer, i + 1, -1)
+      let sign = bytes.get(buffer, i + 1) ?? -1
       let from = if sign == 43 or sign == 45 then i + 2 else i + 1
       let after = digits_of(buffer, from, 10)
       guard after > from else err(error)
       i = after
     } else ()
   }
-  if bytes.get_or(buffer, i, -1) == 110 then i = i + 1 else ()
-  guard not ident_byte(bytes.get_or(buffer, i, -1)) else err(failure(line, col, "identifier starts immediately after numeric literal"))
+  if bytes.get(buffer, i) ?? -1 == 110 then i = i + 1 else ()
+  guard not ident_byte(bytes.get(buffer, i) ?? -1) else err(failure(line, col, "identifier starts immediately after numeric literal"))
   ok(i)
 }
 
@@ -71,17 +71,17 @@ fn scan_number(buffer: Bytes, start: Int, line: Int, col: Int) -> Result[Int, le
 // `'…'` and `"…"` on one line; `\` escapes the next byte, and an escaped line
 // break continues the literal.
 fn scan_string(buffer: Bytes, start: Int, line: Int, col: Int) -> Result[Int, lex.LexError] = {
-  let quote = bytes.get_or(buffer, start, -1)
+  let quote = bytes.get(buffer, start) ?? -1
   var i = start + 1
   var end = -1
   while end < 0 {
-    let b = bytes.get_or(buffer, i, -1)
+    let b = bytes.get(buffer, i) ?? -1
     guard b >= 0 and not line_end(b) and not unicode_line_end(buffer, i) else err(failure(line, col, "unterminated string literal"))
     if b == quote then end = i + 1
     else if b == 92 then {
-      let next = bytes.get_or(buffer, i + 1, -1)
+      let next = bytes.get(buffer, i + 1) ?? -1
       guard next >= 0 else err(failure(line, col, "unterminated string literal"))
-      i = i + (if next == 13 and bytes.get_or(buffer, i + 2, -1) == 10 then 3 else if next == 226 and unicode_line_end(buffer, i + 1) then 4 else 2)
+      i = i + (if next == 13 and bytes.get(buffer, i + 2) ?? -1 == 10 then 3 else if next == 226 and unicode_line_end(buffer, i + 1) then 4 else 2)
     }
     else i = i + 1
   }
@@ -92,8 +92,8 @@ fn scan_string(buffer: Bytes, start: Int, line: Int, col: Int) -> Result[Int, le
 // as the error and skips.
 fn string_recovery_end(buffer: Bytes, start: Int) -> Int = {
   var i = start + 1
-  while i < bytes.len(buffer) and not line_end(bytes.get_or(buffer, i, -1)) and not unicode_line_end(buffer, i) {
-    i = i + (if bytes.get_or(buffer, i, -1) == 92 and bytes.get_or(buffer, i + 1, -1) >= 0 then 2 else 1)
+  while i < bytes.len(buffer) and not line_end(bytes.get(buffer, i) ?? -1) and not unicode_line_end(buffer, i) {
+    i = i + (if bytes.get(buffer, i) ?? -1 == 92 and bytes.get(buffer, i + 1) ?? -1 >= 0 then 2 else 1)
   }
   int.min(i, bytes.len(buffer))
 }
@@ -107,10 +107,10 @@ fn scan_regex(buffer: Bytes, start: Int, line: Int, col: Int) -> Result[Int, lex
   var in_class = false
   var end = -1
   while end < 0 {
-    let b = bytes.get_or(buffer, i, -1)
+    let b = bytes.get(buffer, i) ?? -1
     guard b >= 0 and not line_end(b) and not unicode_line_end(buffer, i) else err(error)
     if b == 92 then {
-      guard not line_end(bytes.get_or(buffer, i + 1, -1)) else err(error)
+      guard not line_end(bytes.get(buffer, i + 1) ?? -1) else err(error)
       i = i + 2
     }
     else if b == 91 then { in_class = true; i = i + 1 }
@@ -121,7 +121,7 @@ fn scan_regex(buffer: Bytes, start: Int, line: Int, col: Int) -> Result[Int, lex
   // an empty body `//` is a comment, never a regex; the driver has already
   // made sure the first byte is not `/` or `*`
   var j = end
-  while ident_byte(bytes.get_or(buffer, j, -1)) { j = j + 1 }
+  while ident_byte(bytes.get(buffer, j) ?? -1) { j = j + 1 }
   ok(j)
 }
 
@@ -138,12 +138,12 @@ fn scan_template_segment(buffer: Bytes, start: Int, line: Int, col: Int) -> Resu
   var i = start + 1
   var found: Option[Segment] = none
   while option.is_none(found) {
-    let b = bytes.get_or(buffer, i, -1)
+    let b = bytes.get(buffer, i) ?? -1
     guard b >= 0 else err(error)
     if b == 96 then found = some(Segment { kind: SEG_CLOSE, end: i + 1 })
-    else if b == 36 and bytes.get_or(buffer, i + 1, -1) == 123 then found = some(Segment { kind: SEG_OPEN, end: i + 2 })
+    else if b == 36 and bytes.get(buffer, i + 1) ?? -1 == 123 then found = some(Segment { kind: SEG_OPEN, end: i + 2 })
     else if b == 92 then {
-      guard bytes.get_or(buffer, i + 1, -1) >= 0 else err(error)
+      guard bytes.get(buffer, i + 1) ?? -1 >= 0 else err(error)
       i = i + 2
     }
     else i = i + 1

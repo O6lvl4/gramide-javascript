@@ -69,14 +69,14 @@ fn spellings() -> List[(String, Int)] = [
 type Words = { data: Bytes, starts: List[Int], ends: List[Int], codes: List[Int] }
 
 fn prepare() -> Words = {
-  var data = bytes.new(0)
+  var data = bytes.zeros(0)
   var starts: List[Int] = []
   var ends: List[Int] = []
   var codes: List[Int] = []
   for entry in spellings() {
     let raw = bytes.from_string(entry.0)
     list.push(starts, bytes.len(data))
-    data = bytes.concat(data, raw)
+    data = data + raw
     list.push(ends, bytes.len(data))
     list.push(codes, entry.1)
   }
@@ -88,7 +88,7 @@ fn prepare() -> Words = {
 // before any spelling is compared.
 fn classify(w: Words, buffer: Bytes, start: Int, end: Int) -> Int = {
   let n = end - start
-  let first = bytes.get_or(buffer, start, -1)
+  let first = bytes.get(buffer, start) ?? -1
   if n < 2 or n > 10 or first < 97 or first > 122 then W_PLAIN
   else {
     var code = W_PLAIN
@@ -97,11 +97,11 @@ fn classify(w: Words, buffer: Bytes, start: Int, end: Int) -> Int = {
     while code == W_PLAIN and k < count {
       let s = list.get(w.starts, k) ?? 0
       let e = list.get(w.ends, k) ?? 0
-      if e - s == n and bytes.get_or(w.data, s, -2) == first then {
+      if e - s == n and bytes.get(w.data, s) ?? -2 == first then {
         var j = 1
         var same = true
         while same and j < n {
-          if bytes.get_or(w.data, s + j, -2) != bytes.get_or(buffer, start + j, -1) then same = false else j = j + 1
+          if (bytes.get(w.data, s + j) ?? -2) != bytes.get(buffer, start + j) ?? -1 then same = false else j = j + 1
         }
         if same then code = list.get(w.codes, k) ?? W_PLAIN else ()
       } else ()
